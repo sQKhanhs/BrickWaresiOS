@@ -1,0 +1,28 @@
+# Secrets / per-machine config — never commit
+local.properties
+BrickWares/Secrets.plist
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcresult
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# Internal reference notes — kept locally, not published
+docs/android-maps/
+
+# macOS
+.DS_Store
