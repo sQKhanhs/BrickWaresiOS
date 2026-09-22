@@ -107,8 +107,12 @@ final class CollectionService {
 
     func addCopy(of item: CatalogSet, _ copy: NewCopy) {
         let kind = item.itemType.rawValue
-        let isFig = item.itemType == .minifig
-        let set = isFig ? nil : (overlay.set(number: item.setNumber) ?? item)
+        // A CMF (Collectible Minifigure) is minifig-KIND but lives in the `sets` table with a real
+        // set_id, so it must be stored by set_id like any set — only an in-set fig (built via
+        // `fromMinifig`, no set_id) is referenced by fig_num. Resolving by id also dodges the CMF
+        // number ambiguity (a CMF series shares one set_number across variants).
+        let isFig = item.itemType == .minifig && item.setId == nil
+        let set = isFig ? nil : (overlay.set(id: item.setId, number: item.setNumber) ?? item)
         let now = nowMillis()
         let date = copy.date?.nilIfBlank
         let qty = max(1, copy.qty)
@@ -186,8 +190,9 @@ final class CollectionService {
         currency: AppCurrency, soldOn: String?, note: String?
     ) {
         let kind = item.itemType.rawValue
-        let isFig = item.itemType == .minifig
-        let set = isFig ? nil : (overlay.set(number: item.setNumber) ?? item)
+        // CMF (minifig-kind, has set_id) → stored by set_id; only fig_num-keyed in-set figs are figs.
+        let isFig = item.itemType == .minifig && item.setId == nil
+        let set = isFig ? nil : (overlay.set(id: item.setId, number: item.setNumber) ?? item)
         let now = nowMillis()
         let qty = max(1, qty)
         let soldOn = soldOn?.nilIfBlank
@@ -296,8 +301,9 @@ final class CollectionService {
         let already = ((try? context.fetchCount(FetchDescriptor<WishlistItem>(
             predicate: #Predicate { $0.setNumber == number && !$0.tombstoned }))) ?? 0) > 0
         guard !already else { return }
-        let isFig = item.itemType == .minifig
-        let set = isFig ? nil : (overlay.set(number: number) ?? item)
+        // CMF (minifig-kind, has set_id) → stored by set_id; only fig_num-keyed in-set figs are figs.
+        let isFig = item.itemType == .minifig && item.setId == nil
+        let set = isFig ? nil : (overlay.set(id: item.setId, number: number) ?? item)
         context.insert(WishlistItem(
             setId: set?.setId, figNum: isFig ? number : nil, itemKind: item.itemType.rawValue,
             setNumber: number, name: item.name, theme: item.theme, subtheme: set?.subtheme ?? "General",

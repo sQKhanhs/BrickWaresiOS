@@ -302,7 +302,9 @@ struct OwnedItemCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 if isFig {
                     Text(item.setNumber).font(.caption2).foregroundStyle(Bw.textMuted)
-                    titleButton(item.name) { router.open(.minifig(item.setNumber)) }
+                    // A CMF is minifig-styled but lives in the set catalog — route it to Set detail;
+                    // only a real in-set fig (figNum set) opens Minifig detail.
+                    titleButton(item.name) { router.open(item.figNum != nil ? .minifig(item.setNumber) : .set(item.setNumber)) }
                     if item.minifigSetCount > 0 { MetaLine(L("minifig_in_sets_label"), String(item.minifigSetCount)) }
                 } else {
                     titleButton("\(item.setNumber) \(item.name)") { router.open(.set(item.setNumber)) }
@@ -355,7 +357,7 @@ struct SoldItemCard: View {
             ItemThumb(urls: isFig ? [sale.imageUrl] : RowImages.card(imageUrl: sale.imageUrl, boxImageUrl: sale.boxImageUrl), size: 72)
 
             VStack(alignment: .leading, spacing: 5) {
-                Button { router.open(isFig ? .minifig(sale.setNumber) : .set(sale.setNumber)) } label: {
+                Button { router.open(sale.figNum != nil ? .minifig(sale.setNumber) : .set(sale.setNumber)) } label: {
                     Text(isFig ? sale.name : "\(sale.setNumber) \(sale.name)")
                         .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
                 }

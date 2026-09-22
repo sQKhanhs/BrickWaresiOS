@@ -162,11 +162,15 @@ enum CollectionCSV {
         var out = Imported()
         for row in parsed.rows {
             let kind = row.value("item_kind")?.lowercased() == "minifig" ? "minifig" : "set"
-            let isFig = kind == "minifig"
-            let figNumRaw = row.value("fig_num") ?? (isFig ? row.value("set_number") : nil)
-            guard let setNumber = row.value("set_number") ?? figNumRaw else { continue }
-            let figNum = isFig ? (figNumRaw ?? setNumber) : figNumRaw
-            let setId = row.value("set_id").flatMap { Int64($0) } ?? (isFig ? nil : setIdByNumber[setNumber])
+            let setIdCol = row.value("set_id").flatMap { Int64($0) }
+            // Fig-referenced iff there's a real fig_num: the explicit column, or a legacy minifig row
+            // that stored the fig_num in set_number with no set_id. A CMF is minifig-KIND but set_id-
+            // referenced, so it must NOT be read as a fig_num row (that breaks the server one_ref XOR).
+            let figNum = row.value("fig_num")?.nilIfBlank
+                ?? ((kind == "minifig" && setIdCol == nil) ? row.value("set_number")?.nilIfBlank : nil)
+            guard let setNumber = row.value("set_number")?.nilIfBlank ?? figNum else { continue }
+            let isFigRef = figNum != nil
+            let setId = isFigRef ? nil : (setIdCol ?? setIdByNumber[setNumber])
             let currency = AppCurrency(rawValue: (row.value("currency") ?? "").uppercased())?.rawValue ?? "USD"
             let condition = row.value("condition")?.lowercased() == "used" ? "used" : "new"
             let quantity = max(1, row.value("quantity").flatMap { Int($0) } ?? 1)

@@ -118,7 +118,7 @@ private struct WishlistCard: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 5) {
-                Button { router.open(isFig ? .minifig(entry.setNumber) : .set(entry.setNumber)) } label: {
+                Button { router.open(entry.figNum != nil ? .minifig(entry.setNumber) : .set(entry.setNumber)) } label: {
                     Text(verbatim: "\(entry.setNumber) \(entry.name)")
                         .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
                 }

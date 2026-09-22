@@ -236,6 +236,21 @@ struct CSVTests {
         #expect(back.wishlist.first?.status == "RETIRED")
     }
 
+    @Test func cmfRoundTripsAsSetIdReference() throws {
+        // A CMF is minifig-KIND but set_id-referenced; the round-trip must keep it that way and NOT
+        // turn it into a fig_num row (which would carry both refs and fail the server one_ref XOR).
+        let cmf = CollectionCopy(
+            setId: 71050, figNum: nil, itemKind: "minifig", setNumber: "71050", name: "CMF Knight",
+            theme: "Collectable Minifigures", subtheme: "Series 23", releaseYear: 2022, releaseMonth: 1,
+            pieces: 7, minifigs: 1, retailPrice: 499, status: "AVAILABLE", imageUrl: nil,
+            quantity: 1, condition: "new", pricePaid: 500_000, currency: "VND",
+            acquiredOn: nil, notes: nil, updatedAt: 1, dirty: false
+        )
+        let parsed = CollectionCSV.parse(CollectionCSV.encode(copies: [cmf], sales: [], wishlist: []))
+        let back = try #require(CollectionCSV.rows(from: parsed, setIdByNumber: [:], now: 7).copies.first)
+        #expect(back.itemKind == "minifig" && back.setId == 71050 && back.figNum == nil && back.setNumber == "71050")
+    }
+
     @Test func toleratesCRLFBomAndV1Files() {
         let v1 = "\u{FEFF}set_number,name,item_kind,quantity,price_paid\r\n10300,DeLorean,set,3,1000\r\n\r\n"
         let parsed = CollectionCSV.parse(v1)
@@ -317,6 +332,41 @@ struct CollectionServiceTests {
         service.addCopy(of: fig, .init(pricePaid: 500_000, currency: .vnd))
         let row = try #require(try CollectionCopy.fetchActive(in: ctx).first)
         #expect(row.itemKind == "minifig" && row.figNum == "fig-000123" && row.setId == nil && row.setNumber == "fig-000123")
+    }
+
+    @Test func cmfRowsAreKeyedBySetIdNotFigNum() throws {
+        // A Collectible Minifigure lives in the `sets` table (item_type=minifig) with a real set_id, so
+        // adding one must store it by set_id — storing its set_number as a fig_num breaks the server FK.
+        let (service, ctx) = try makeService()
+        let cmf = CatalogSet(
+            setNumber: "71050", name: "CMF Knight", itemType: .minifig, theme: "Collectable Minifigures",
+            releaseYear: 2022, releaseMonth: 1, pieces: 7, minifigs: 1, retailPrice: 499, status: .available,
+            setId: 71050
+        )
+        service.addCopy(of: cmf, .init(pricePaid: 500_000, currency: .vnd))
+        let row = try #require(try CollectionCopy.fetchActive(in: ctx).first)
+        #expect(row.itemKind == "minifig" && row.setId == 71050 && row.figNum == nil && row.setNumber == "71050")
+    }
+
+    @Test func cmfReconstructorsPreserveSetId() {
+        // Re-adding from a sold or wishlisted CMF must keep set_id — else addCopy/addSale would see
+        // itemType==.minifig && setId==nil and re-store the CMF by fig_num (the corruption). An in-set
+        // fig (setId nil) must stay fig-referenced.
+        let cmfSale = SoldItem(
+            id: "s1", setNumber: "71050", name: "CMF Knight", itemType: .minifig, theme: "CMF",
+            releaseYear: 2022, releaseMonth: 1, retailPrice: 499, pricePaid: 0, saleValue: 100,
+            setId: 71050, figNum: nil)
+        let cmfWish = WishlistEntry(
+            rowId: "w1", setNumber: "71050", name: "CMF Knight", itemType: .minifig, theme: "CMF",
+            releaseYear: 2022, releaseMonth: 1, pieces: 7, minifigs: 1, retailPrice: 499,
+            setId: 71050, figNum: nil)
+        let figSale = SoldItem(
+            id: "s2", setNumber: "fig-000123", name: "Boba", itemType: .minifig, theme: "SW",
+            releaseYear: 0, releaseMonth: 0, retailPrice: 0, pricePaid: 0, saleValue: 1,
+            setId: nil, figNum: "fig-000123")
+        #expect(CatalogSet(cmfSale).setId == 71050 && CatalogSet(cmfSale).itemType == .minifig)
+        #expect(CatalogSet(cmfWish).setId == 71050 && CatalogSet(cmfWish).itemType == .minifig)
+        #expect(CatalogSet(figSale).setId == nil) // in-set fig stays fig-referenced
     }
 
     @Test func statsSumInDisplayCurrency() throws {

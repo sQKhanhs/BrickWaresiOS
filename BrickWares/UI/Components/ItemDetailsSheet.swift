@@ -267,7 +267,8 @@ extension CatalogSet {
             setNumber: sale.setNumber, name: sale.name, itemType: sale.itemType, theme: sale.theme,
             releaseYear: sale.releaseYear, releaseMonth: sale.releaseMonth, pieces: sale.pieces,
             minifigs: sale.minifigs, retailPrice: sale.retailPrice > 0 ? sale.retailPrice : nil,
-            status: sale.status, imageUrl: sale.imageUrl, boxImageUrl: sale.boxImageUrl, thumbnailUrl: sale.imageUrl
+            status: sale.status, imageUrl: sale.imageUrl, boxImageUrl: sale.boxImageUrl,
+            thumbnailUrl: sale.imageUrl, setId: sale.setId
         )
     }
 
@@ -276,7 +277,8 @@ extension CatalogSet {
             setNumber: wish.setNumber, name: wish.name, itemType: wish.itemType, theme: wish.theme,
             releaseYear: wish.releaseYear, releaseMonth: wish.releaseMonth, pieces: wish.pieces,
             minifigs: wish.minifigs, retailPrice: wish.retailPrice > 0 ? wish.retailPrice : nil,
-            status: wish.status, imageUrl: wish.imageUrl, boxImageUrl: wish.boxImageUrl, thumbnailUrl: wish.imageUrl
+            status: wish.status, imageUrl: wish.imageUrl, boxImageUrl: wish.boxImageUrl,
+            thumbnailUrl: wish.imageUrl, setId: wish.setId
         )
     }
 }

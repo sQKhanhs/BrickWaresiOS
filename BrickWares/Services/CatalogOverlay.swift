@@ -30,11 +30,12 @@ final class CatalogOverlay {
         var figNums: Set<String> = []
 
         mutating func add(kind: String, setNumber: String, figNum: String?) {
-            if kind == "minifig" {
-                // A minifig row's key is its fig_num, or (legacy rows) the set_number field.
-                if let figNum { figNums.insert(figNum) }
-                figNums.insert(setNumber)
+            if kind == "minifig", let figNum {
+                // In-set minifig: keyed by its Rebrickable fig_num, fetched from the `minifigs` catalog.
+                figNums.insert(figNum)
             } else {
+                // Sets, and CMFs (minifig-KIND rows that live in the `sets` table with no fig_num) —
+                // both resolve against the set catalog by number (and, at read time, by set_id).
                 setNumbers.insert(setNumber)
             }
         }
@@ -111,8 +112,10 @@ enum DisplayBuilder {
         let fig = overlay.minifig(head.figNum)
         let value = values.value(setId: head.setId, figNum: head.figNum)
         let status = cat?.status ?? Availability(wire: head.status)
-        let isFig = head.figNum != nil
-        let valueShown = isFig || status.showsCommunityValue
+        // Minifig-kind items (both in-set figs and CMFs, which carry no fig_num) always surface a
+        // community value — key off the kind, not the presence of a fig_num.
+        let isMinifig = head.itemKind == "minifig"
+        let valueShown = isMinifig || status.showsCommunityValue
         let retail = head.retailPrice ?? 0
 
         // Growth vs what was paid, per unit — everything in USD cents. The reference is the current
@@ -157,7 +160,8 @@ enum DisplayBuilder {
                 currentValueInfo: values.value(setId: row.setId, figNum: row.figNum),
                 status: cat?.status ?? Availability(wire: row.status),
                 imageUrl: overlay.minifig(row.figNum)?.imageUrl ?? row.imageUrl,
-                boxImageUrl: cat?.boxImageUrl, addedAt: row.updatedAt
+                boxImageUrl: cat?.boxImageUrl, addedAt: row.updatedAt,
+                setId: row.setId, figNum: row.figNum
             )
         }
     }
@@ -165,8 +169,9 @@ enum DisplayBuilder {
     static func sold(_ rows: [Sale]) -> [SoldItem] {
         rows.filter { !$0.tombstoned }.map { row in
             let cat = overlay.set(id: row.setId, number: row.setNumber)
-            // Recover the minifig image: prefer fig_num, else the setNumber field (holds the fig_num).
-            let figKey = row.figNum ?? (row.itemKind == "minifig" ? row.setNumber : nil)
+            // In-set figs resolve their image via fig_num; CMFs (no fig_num) fall back to the stored
+            // image, and their catalog data comes from `cat` (resolved by set_id above).
+            let figKey = row.figNum
             return SoldItem(
                 id: row.id, setNumber: row.setNumber, name: row.name,
                 itemType: ItemType(wire: row.itemKind), theme: row.theme,
@@ -179,7 +184,8 @@ enum DisplayBuilder {
                 currency: AppCurrency(wire: row.currency), quantity: row.quantity,
                 condition: Condition(wire: row.condition), soldOn: row.soldOn, note: row.notes,
                 status: cat?.status ?? .available,
-                currentValueInfo: values.value(setId: row.setId, figNum: row.figNum)
+                currentValueInfo: values.value(setId: row.setId, figNum: row.figNum),
+                setId: row.setId, figNum: row.figNum
             )
         }
     }

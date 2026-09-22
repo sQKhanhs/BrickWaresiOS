@@ -90,6 +90,10 @@ struct WishlistEntry: Identifiable, Hashable, Sendable {
     var boxImageUrl: String?
     /// Epoch millis.
     var addedAt: Int64 = 0
+    /// Catalog refs of the underlying row, for value lookups + navigation (mirrors CollectionItem —
+    /// a CMF has setId set + figNum nil, an in-set fig has figNum set + setId nil).
+    var setId: Int64?
+    var figNum: String?
 
     var id: String { setNumber }
     var currentValue: Int64? { currentValueInfo?.amountUsdCents }
@@ -119,6 +123,10 @@ struct SoldItem: Identifiable, Hashable, Sendable {
     var note: String?
     var status: Availability = .available
     var currentValueInfo: CurrentValue?
+    /// Catalog refs of the underlying row, for value lookups + navigation (mirrors CollectionItem —
+    /// a CMF has setId set + figNum nil, an in-set fig has figNum set + setId nil).
+    var setId: Int64?
+    var figNum: String?
 
     var profit: Int64 { saleValue - pricePaid }
     var profitPercent: Double { pricePaid == 0 ? 0 : Double(profit) / Double(pricePaid) * 100.0 }
