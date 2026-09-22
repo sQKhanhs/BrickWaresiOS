@@ -15,5 +15,14 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Allows cleartext HTTP only to loopback / .local / private-IP ranges (never public hosts), so the
+	     `BrickWares Dev` build can reach the local Supabase stack at http://127.0.0.1:54321 (or the Mac's
+	     LAN IP on a physical device). Prod talks to a public HTTPS host, which this does not weaken; unlike
+	     NSAllowsArbitraryLoads it needs no App Store justification. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

@@ -13,6 +13,35 @@ Supabase backend, same data contract, native iOS feel. iOS 18+, Swift 6.2 toolch
    `brickwares://auth-callback` to Auth → URL Configuration → Redirect URLs (Google sign-in uses the
    OAuth web sheet).
 
+## Build variants
+
+Two schemes, mirroring the Android `prod` / `dev` flavors:
+
+| Scheme | Config | Backend | Bundle id | Captcha |
+|---|---|---|---|---|
+| **BrickWares** | Debug / Release | prod Supabase (from `Secrets.plist`) | `com.SenniApp.BrickWares` | Turnstile |
+| **BrickWares Dev** | Dev | **local** Supabase (CLI + Docker) | `com.SenniApp.BrickWares.dev` | off |
+
+Pick the scheme from Xcode's toolbar. The bundle ids differ, so the dev app installs **side by side** with prod.
+
+**Run the Dev variant against local Supabase:**
+
+1. Start the local stack on the Mac: `supabase start` (serves `http://127.0.0.1:54321` and prints the local
+   publishable key — already hardcoded as `AppConfig.devSupabaseAnonKey`, identical on every machine).
+2. Select the **BrickWares Dev** scheme and run on the **Simulator** — it reaches the Mac's `127.0.0.1`
+   directly (there is no `10.0.2.2` alias like the Android emulator).
+3. The Dev build targets `http://127.0.0.1:54321`, uses the local key, and skips the captcha gate (local
+   GoTrue has captcha off). `NSAllowsLocalNetworking` in `Config/Info.plist` permits the cleartext HTTP.
+
+**On a physical device** the phone can't reach the Mac's `127.0.0.1`: in the *BrickWares Dev* scheme →
+Run → Arguments, enable the `BRICKWARES_DEV_SUPABASE_URL` env var and set it to `http://<mac-LAN-IP>:54321`.
+The local stack must bind `0.0.0.0` (`[api] host` in `supabase/config.toml`) and the Mac firewall must allow
+TCP 54321. Apple/Google sign-in also need those providers configured in the local `config.toml`; email + OTP
+work out of the box (the CLI captures mail in its Inbucket/Mailpit inbox).
+
+`DEV_LOCAL` (a `SWIFT_ACTIVE_COMPILATION_CONDITIONS` flag on the `Dev` configuration) gates all of the above
+in `AppConfig` — prod builds never compile the local-Supabase branch.
+
 ## Layout
 
 ```
