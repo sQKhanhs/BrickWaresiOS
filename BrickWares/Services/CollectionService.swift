@@ -145,6 +145,10 @@ final class CollectionService {
         // number ambiguity (a CMF series shares one set_number across variants).
         let isFig = item.itemType == .minifig && item.setId == nil
         let set = isFig ? nil : (overlay.set(id: item.setId, number: item.setNumber) ?? item)
+        // The row identity, resolved ONCE and used for the merge lookup, the insert AND the wishlist
+        // removal alike (Android parity): the SELECTED variant's set_id, else the catalog-resolved one.
+        // Looking up by one key and inserting under another split a card on every add.
+        let rowSetId = isFig ? nil : (item.setId ?? set?.setId)
         let now = nowMillis()
         let date = copy.date?.nilIfBlank
         // Clamp to the server's CHECK limits before anything goes dirty (see `UserDataLimits`).
@@ -156,7 +160,7 @@ final class CollectionService {
         // existing row (bumps quantity, sums the total) instead of adding a duplicate. Per-unit match
         // is cross-multiplied to avoid integer-division rounding. A merge that would pass the server's
         // quantity or price cap is refused (a fresh row is added) rather than clamped.
-        let existing = activeCopies(setNumber: item.setNumber, kind: kind)
+        let existing = activeCopies(setId: rowSetId, setNumber: item.setNumber, kind: kind)
         if let match = existing.first(where: {
             $0.condition == copy.condition.rawValue && $0.acquiredOn == date
                 && ($0.notes ?? "") == (note ?? "") && $0.currency == copy.currency.rawValue
@@ -168,7 +172,7 @@ final class CollectionService {
             touch(match, now)
         } else {
             context.insert(CollectionCopy(
-                setId: set?.setId, figNum: isFig ? item.setNumber : nil, itemKind: kind,
+                setId: rowSetId, figNum: isFig ? item.setNumber : nil, itemKind: kind,
                 setNumber: item.setNumber, name: item.name, theme: item.theme,
                 subtheme: set?.subtheme ?? "General",
                 releaseYear: item.releaseYear, releaseMonth: item.releaseMonth,
@@ -182,10 +186,11 @@ final class CollectionService {
                 updatedAt: now, dirty: true
             ))
         }
-        contributeLocal(setId: set?.setId, figNum: isFig ? item.setNumber : nil, setNumber: item.setNumber,
+        contributeLocal(setId: rowSetId, figNum: isFig ? item.setNumber : nil, setNumber: item.setNumber,
                         amount: paid, currency: copy.currency, isSale: false)
-        // Owning an item removes it from the wishlist (want → have) — on EVERY add path.
-        tombstoneWishlist(setNumber: item.setNumber, now)
+        // Owning an item removes it from the wishlist (want → have) — on EVERY add path, keyed by the same
+        // row identity, so owning one figure of a CMF series only clears THAT figure.
+        wishlistRows(setId: rowSetId, setNumber: item.setNumber).forEach { tombstone($0, now) }
         commit()
     }
 
@@ -209,12 +214,11 @@ final class CollectionService {
         commit()
     }
 
-    /// Removes every copy of an item (swipe-to-delete on the Collection card).
-    func removeItem(setNumber: String) {
+    /// Removes every copy of ONE item (swipe-to-delete on a Collection card): by set_id for a cataloged
+    /// set, so only this variant of a shared number goes; else by number among set_id-less rows.
+    func removeItem(setNumber: String, setId: Int64?) {
         let now = nowMillis()
-        let rows = (try? context.fetch(FetchDescriptor<CollectionCopy>(
-            predicate: #Predicate { $0.setNumber == setNumber && !$0.tombstoned }))) ?? []
-        rows.forEach { tombstone($0, now) }
+        activeCopies(setId: setId, setNumber: setNumber, kind: nil).forEach { tombstone($0, now) }
         commit()
     }
 
@@ -230,6 +234,7 @@ final class CollectionService {
         // CMF (minifig-kind, has set_id) → stored by set_id; only fig_num-keyed in-set figs are figs.
         let isFig = item.itemType == .minifig && item.setId == nil
         let set = isFig ? nil : (overlay.set(id: item.setId, number: item.setNumber) ?? item)
+        let rowSetId = isFig ? nil : (item.setId ?? set?.setId) // one identity for lookup + insert
         let now = nowMillis()
         let qty = UserDataLimits.capQty(qty)
         let paid = UserDataLimits.capPrice(paid)
@@ -237,7 +242,7 @@ final class CollectionService {
         let soldOn = soldOn?.nilIfBlank
         let note = UserDataLimits.capNote(note?.nilIfBlank)
 
-        if let match = activeSales(setNumber: item.setNumber, kind: kind).first(where: {
+        if let match = activeSales(setId: rowSetId, setNumber: item.setNumber, kind: kind).first(where: {
             $0.condition == condition.rawValue && $0.soldOn == soldOn && ($0.notes ?? "") == (note ?? "")
                 && $0.currency == currency.rawValue
                 && $0.pricePaid * Int64(qty) == paid * Int64($0.quantity)
@@ -251,7 +256,7 @@ final class CollectionService {
             touch(match, now)
         } else {
             context.insert(Sale(
-                setId: set?.setId, figNum: isFig ? item.setNumber : nil, itemKind: kind,
+                setId: rowSetId, figNum: isFig ? item.setNumber : nil, itemKind: kind,
                 setNumber: item.setNumber, name: item.name, theme: item.theme,
                 releaseYear: item.releaseYear, releaseMonth: item.releaseMonth,
                 imageUrl: isFig ? item.imageUrl : (set?.thumbnailUrl ?? item.thumbnailUrl ?? item.imageUrl),
@@ -261,7 +266,7 @@ final class CollectionService {
                 soldOn: soldOn, notes: note, updatedAt: now, dirty: true
             ))
         }
-        contributeLocal(setId: set?.setId, figNum: isFig ? item.setNumber : nil, setNumber: item.setNumber,
+        contributeLocal(setId: rowSetId, figNum: isFig ? item.setNumber : nil, setNumber: item.setNumber,
                         amount: salePrice, currency: currency, isSale: true)
         commit()
     }
@@ -280,7 +285,7 @@ final class CollectionService {
         let now = nowMillis()
         let soldOn = soldOn?.nilIfBlank
 
-        if let match = activeSales(setNumber: copy.setNumber, kind: copy.itemKind).first(where: {
+        if let match = activeSales(setId: copy.setId, setNumber: copy.setNumber, kind: copy.itemKind).first(where: {
             $0.condition == copy.condition && $0.soldOn == soldOn && ($0.notes ?? "") == (copy.notes ?? "")
                 && $0.currency == currency.rawValue
                 && $0.pricePaid * Int64(sellQty) == soldPaid * Int64($0.quantity)
@@ -343,14 +348,14 @@ final class CollectionService {
 
     func addToWishlist(_ item: CatalogSet) {
         let number = item.setNumber
-        let already = ((try? context.fetchCount(FetchDescriptor<WishlistItem>(
-            predicate: #Predicate { $0.setNumber == number && !$0.tombstoned }))) ?? 0) > 0
-        guard !already else { return }
         // CMF (minifig-kind, has set_id) → stored by set_id; only fig_num-keyed in-set figs are figs.
         let isFig = item.itemType == .minifig && item.setId == nil
         let set = isFig ? nil : (overlay.set(id: item.setId, number: number) ?? item)
+        let rowSetId = isFig ? nil : (item.setId ?? set?.setId)
+        // Already wishlisted? Per variant: one figure of a CMF series must not block another.
+        guard wishlistRows(setId: rowSetId, setNumber: number).isEmpty else { return }
         context.insert(WishlistItem(
-            setId: set?.setId, figNum: isFig ? number : nil, itemKind: item.itemType.rawValue,
+            setId: rowSetId, figNum: isFig ? number : nil, itemKind: item.itemType.rawValue,
             setNumber: number, name: item.name, theme: item.theme, subtheme: set?.subtheme ?? "General",
             releaseYear: item.releaseYear, releaseMonth: item.releaseMonth,
             pieces: item.pieces, minifigs: item.minifigs,
@@ -362,13 +367,23 @@ final class CollectionService {
         commit()
     }
 
-    func removeFromWishlist(setNumber: String) {
-        tombstoneWishlist(setNumber: setNumber, nowMillis())
+    /// Un-wishlists ONE item (a Wishlist card): by set_id for a cataloged set — this variant only — else
+    /// by number among set_id-less rows (in-set minifigs, legacy rows).
+    func removeFromWishlist(setNumber: String, setId: Int64?) {
+        let now = nowMillis()
+        wishlistRows(setId: setId, setNumber: setNumber).forEach { tombstone($0, now) }
         commit()
     }
 
     func toggleWishlist(_ item: CatalogSet, isWishlisted: Bool) {
-        isWishlisted ? removeFromWishlist(setNumber: item.setNumber) : addToWishlist(item)
+        guard isWishlisted else { addToWishlist(item); return }
+        // From a catalog card: its exact variant, plus a legacy set_id-less row of its number — that is
+        // what `OwnershipIndex.isWishlisted` matched, so the heart must be able to clear it too.
+        let now = nowMillis()
+        var rows = wishlistRows(setId: item.setId, setNumber: item.setNumber)
+        if item.setId != nil { rows += wishlistRows(setId: nil, setNumber: item.setNumber) }
+        rows.forEach { tombstone($0, now) }
+        commit()
     }
 
     // MARK: CSV (Settings → Data)
@@ -377,7 +392,9 @@ final class CollectionService {
         CollectionCSV.encode(
             copies: (try? CollectionCopy.fetchActive(in: context)) ?? [],
             sales: (try? Sale.fetchActive(in: context)) ?? [],
-            wishlist: (try? WishlistItem.fetchActive(in: context)) ?? []
+            wishlist: (try? WishlistItem.fetchActive(in: context)) ?? [],
+            // The exact variant from the row's set_id only (the overlay resolves every referenced id).
+            variantOf: { [overlay] setId in setId.flatMap { overlay.set(id: $0)?.numberVariant } }
         )
     }
 
@@ -392,16 +409,19 @@ final class CollectionService {
         let version = CollectionCSV.version(of: parsed)
         guard version <= CollectionCSV.formatVersion else { throw CollectionCSV.ImportError.tooNew(version) }
 
-        // A hand-edited file may omit set_id — resolve those in ONE batch catalog query.
+        // A hand-edited or legacy file may omit set_id — resolve those in ONE batch catalog query that
+        // returns EVERY variant per number (the lowest-only lookup would pin a CMF row to variant 1).
         let needIds = Set(parsed.rows.compactMap { row -> String? in
             let isFig = row.value("item_kind")?.lowercased() == "minifig"
             return (isFig || row.value("set_id") != nil) ? nil : row.value("set_number")
         })
-        let resolved = ((try? await CatalogRepository.shared.fetchSets(numbers: needIds)) ?? [])
-            .reduce(into: [String: Int64]()) { acc, s in if let id = s.setId { acc[s.setNumber] = id } }
+        let variants = Dictionary(grouping: (try? await CatalogRepository.shared.fetchSetVariants(numbers: needIds)) ?? [],
+                                  by: \.setNumber)
 
         let now = nowMillis()
-        let imported = CollectionCSV.rows(from: parsed, setIdByNumber: resolved, now: now)
+        let imported = CollectionCSV.rows(from: parsed, now: now) { number, variant in
+            CollectionCSV.resolveSetId(variant: variant, among: variants[number] ?? [])
+        }
         // A hand-edited file can carry anything — clamp to the server's CHECK limits before it goes dirty.
         for row in imported.copies {
             row.quantity = UserDataLimits.capQty(row.quantity)
@@ -436,20 +456,44 @@ final class CollectionService {
             && prices.allSatisfy { $0.0 + $0.1 <= UserDataLimits.maxPriceMinor }
     }
 
-    private func activeCopies(setNumber: String, kind: String) -> [CollectionCopy] {
-        (try? context.fetch(FetchDescriptor<CollectionCopy>(
-            predicate: #Predicate { $0.setNumber == setNumber && $0.itemKind == kind && !$0.tombstoned }))) ?? []
+    // Rows of ONE item (see `ItemKey`): by set_id for a cataloged set, so each variant of a shared number
+    // is its own item; else — an in-set minifig or a legacy row — by number among set_id-less rows ONLY,
+    // so a number match can never reach into a cataloged variant. `kind` nil = any kind.
+
+    private func activeCopies(setId: Int64?, setNumber: String, kind: String?) -> [CollectionCopy] {
+        let rows: [CollectionCopy]
+        if let setId {
+            let id: Int64? = setId
+            rows = (try? context.fetch(FetchDescriptor<CollectionCopy>(
+                predicate: #Predicate { $0.setId == id && !$0.tombstoned }))) ?? []
+        } else {
+            rows = (try? context.fetch(FetchDescriptor<CollectionCopy>(
+                predicate: #Predicate { $0.setId == nil && $0.setNumber == setNumber && !$0.tombstoned }))) ?? []
+        }
+        return kind.map { k in rows.filter { $0.itemKind == k } } ?? rows
     }
 
-    private func activeSales(setNumber: String, kind: String) -> [Sale] {
-        (try? context.fetch(FetchDescriptor<Sale>(
-            predicate: #Predicate { $0.setNumber == setNumber && $0.itemKind == kind && !$0.tombstoned }))) ?? []
+    private func activeSales(setId: Int64?, setNumber: String, kind: String) -> [Sale] {
+        let rows: [Sale]
+        if let setId {
+            let id: Int64? = setId
+            rows = (try? context.fetch(FetchDescriptor<Sale>(
+                predicate: #Predicate { $0.setId == id && !$0.tombstoned }))) ?? []
+        } else {
+            rows = (try? context.fetch(FetchDescriptor<Sale>(
+                predicate: #Predicate { $0.setId == nil && $0.setNumber == setNumber && !$0.tombstoned }))) ?? []
+        }
+        return rows.filter { $0.itemKind == kind }
     }
 
-    private func tombstoneWishlist(setNumber: String, _ now: Int64) {
-        let rows = (try? context.fetch(FetchDescriptor<WishlistItem>(
-            predicate: #Predicate { $0.setNumber == setNumber && !$0.tombstoned }))) ?? []
-        rows.forEach { tombstone($0, now) }
+    private func wishlistRows(setId: Int64?, setNumber: String) -> [WishlistItem] {
+        if let setId {
+            let id: Int64? = setId
+            return (try? context.fetch(FetchDescriptor<WishlistItem>(
+                predicate: #Predicate { $0.setId == id && !$0.tombstoned }))) ?? []
+        }
+        return (try? context.fetch(FetchDescriptor<WishlistItem>(
+            predicate: #Predicate { $0.setId == nil && $0.setNumber == setNumber && !$0.tombstoned }))) ?? []
     }
 
     private func touch(_ row: some SyncableRow, _ now: Int64) {

@@ -24,14 +24,29 @@ struct SetDetailView: View {
 
     init(catalogKey: String) {
         self.catalogKey = catalogKey
-        // Owned copies of this set number (the bare number = everything before a "-<variant>" suffix).
-        let number = Self.bareNumber(catalogKey)
-        _copyRows = Query(filter: #Predicate<CollectionCopy> { $0.setNumber == number && !$0.tombstoned })
+        // Candidate owned copies; `ownedRows(of:)` narrows them to the loaded variant. A "sid:" key (an
+        // owned row's exact variant) is queried by set_id; a number key by the bare number (everything
+        // before a "-<variant>" suffix), which spans that number's variants until the set loads.
+        if let sid = CatalogKey.setId(catalogKey) {
+            let id: Int64? = sid
+            _copyRows = Query(filter: #Predicate<CollectionCopy> { $0.setId == id && !$0.tombstoned })
+        } else {
+            let number = Self.bareNumber(catalogKey)
+            _copyRows = Query(filter: #Predicate<CollectionCopy> { $0.setNumber == number && !$0.tombstoned })
+        }
     }
 
+    /// The bare set number of a key, or "" for a "sid:" key (unknown until the set loads).
     private static func bareNumber(_ key: String) -> String {
+        if CatalogKey.setId(key) != nil { return "" }
         guard let dash = key.lastIndex(of: "-"), dash != key.startIndex, Int(key[key.index(after: dash)...]) != nil else { return key }
         return String(key[..<dash])
+    }
+
+    /// This exact variant's copies (plus any legacy set_id-less copies of its number — see `ItemKey`).
+    private func ownedRows(of set: CatalogSet) -> [CollectionCopy] {
+        let keys = set.ownershipKeys
+        return copyRows.filter { keys.contains($0.variantKey) }
     }
 
     var body: some View {
@@ -104,7 +119,8 @@ struct SetDetailView: View {
 
     private func pricingCard(_ set: CatalogSet) -> some View {
         let currency = settings.currency
-        let owned = copyRows.isEmpty ? nil : DisplayBuilder.collectionItem(copyRows)
+        let rows = ownedRows(of: set)
+        let owned = rows.isEmpty ? nil : DisplayBuilder.collectionItem(rows)
         // Brickset's note, in Vietnamese when the app runs in Vietnamese and a translation exists.
         let isVietnamese = Locale.current.language.languageCode?.identifier == "vi"
         let note = (isVietnamese ? set.notesVi : nil) ?? set.notes
@@ -184,7 +200,7 @@ struct SetDetailView: View {
             // ONCE per open so the cards don't reshuffle as the user adds/wishlists.
             related = Array(
                 (await themeSets)
-                    .filter { $0.id != loaded.id && !ownership.owned.contains($0.setNumber) && !ownership.wishlisted.contains($0.setNumber) }
+                    .filter { $0.id != loaded.id && !ownership.isOwned($0) && !ownership.isWishlisted($0) }
                     .shuffled().prefix(3)
             )
         } catch is CancellationError {
@@ -232,15 +248,15 @@ private struct Hero: View {
             Text(set.name).font(.title3.weight(.bold)).multilineTextAlignment(.center)
 
             HStack(spacing: 10) {
-                if ownership.isOwnedOrSold(set.setNumber) {
-                    Button { sheets.details(set, tab: ownership.owned.contains(set.setNumber) ? .collection : .sales) } label: {
+                if ownership.isOwnedOrSold(set) {
+                    Button { sheets.details(set, tab: ownership.isOwned(set) ? .collection : .sales) } label: {
                         Label(L("action_see_detail"), systemImage: "checkmark")
                     }
                     .buttonStyle(.bwSecondary)
                 } else {
                     Button { sheets.add(set, auth: auth) } label: { Label(L("action_add"), systemImage: "plus") }
                         .buttonStyle(.bwPrimary)
-                    WishlistHeroButton(item: set, isWishlisted: ownership.wishlisted.contains(set.setNumber))
+                    WishlistHeroButton(item: set, isWishlisted: ownership.isWishlisted(set))
                 }
             }
         }

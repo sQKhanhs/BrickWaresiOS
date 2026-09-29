@@ -105,15 +105,15 @@ private struct MinifigContent: View {
                 .buttonStyle(.plain)
                 Text(fig.name).font(.title3.weight(.bold)).multilineTextAlignment(.center)
                 HStack(spacing: 10) {
-                    if ownership.isOwnedOrSold(fig.figNum) {
-                        Button { sheets.details(asSet, tab: ownership.owned.contains(fig.figNum) ? .collection : .sales) } label: {
+                    if ownership.isOwnedOrSold(asSet) {
+                        Button { sheets.details(asSet, tab: ownership.isOwned(asSet) ? .collection : .sales) } label: {
                             Label(L("action_see_detail"), systemImage: "checkmark")
                         }
                         .buttonStyle(.bwSecondary)
                     } else {
                         Button { sheets.add(asSet, auth: auth) } label: { Label(L("action_add"), systemImage: "plus") }
                             .buttonStyle(.bwPrimary)
-                        WishlistHeroButton(item: asSet, isWishlisted: ownership.wishlisted.contains(fig.figNum))
+                        WishlistHeroButton(item: asSet, isWishlisted: ownership.isWishlisted(asSet))
                     }
                 }
             }

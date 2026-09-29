@@ -33,6 +33,11 @@ protocol SyncableRow: PersistentModel {
     static func fetchActive(in ctx: ModelContext) throws -> [Self]
 }
 
+extension SyncableRow {
+    /// The row's ownership / grouping identity (see `ItemKey`). Not usable inside a `#Predicate`.
+    var variantKey: String { ItemKey.of(setId: setId, figNum: figNum, setNumber: setNumber) }
+}
+
 @Model
 final class CollectionCopy: SyncableRow {
     @Attribute(.unique) var id: String

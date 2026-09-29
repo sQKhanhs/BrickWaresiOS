@@ -35,11 +35,24 @@ struct ItemDetailsSheet: View {
     init(request: ItemDetailsRequest) {
         self.request = request
         _tab = State(initialValue: request.initialTab)
+        // This exact variant's rows (see `ItemKey`): a shared number's other variants are other items, so
+        // the sheet must never list — or edit, sell, delete — a sibling's copies. Legacy set_id-less rows
+        // of the number still match; they're what marks the item owned.
         let number = request.item.setNumber
-        _copyRows = Query(filter: #Predicate<CollectionCopy> { $0.setNumber == number && !$0.tombstoned },
-                          sort: \CollectionCopy.updatedAt)
-        _saleRows = Query(filter: #Predicate<Sale> { $0.setNumber == number && !$0.tombstoned },
-                          sort: \Sale.updatedAt)
+        if let sid = request.item.setId {
+            let id: Int64? = sid
+            _copyRows = Query(filter: #Predicate<CollectionCopy> {
+                !$0.tombstoned && ($0.setId == id || ($0.setId == nil && $0.setNumber == number))
+            }, sort: \CollectionCopy.updatedAt)
+            _saleRows = Query(filter: #Predicate<Sale> {
+                !$0.tombstoned && ($0.setId == id || ($0.setId == nil && $0.setNumber == number))
+            }, sort: \Sale.updatedAt)
+        } else {
+            _copyRows = Query(filter: #Predicate<CollectionCopy> { !$0.tombstoned && $0.setId == nil && $0.setNumber == number },
+                              sort: \CollectionCopy.updatedAt)
+            _saleRows = Query(filter: #Predicate<Sale> { !$0.tombstoned && $0.setId == nil && $0.setNumber == number },
+                              sort: \Sale.updatedAt)
+        }
     }
 
     private var currency: AppCurrency { settings.currency }

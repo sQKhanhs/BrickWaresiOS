@@ -26,29 +26,35 @@ final class CatalogOverlay {
     private init() {}
 
     struct ReferencedKeys: Hashable, Sendable {
+        var setIds: Set<Int64> = []
         var setNumbers: Set<String> = []
         var figNums: Set<String> = []
 
-        mutating func add(kind: String, setNumber: String, figNum: String?) {
+        mutating func add(kind: String, setNumber: String, figNum: String?, setId: Int64?) {
             if kind == "minifig", let figNum {
                 // In-set minifig: keyed by its Rebrickable fig_num, fetched from the `minifigs` catalog.
                 figNums.insert(figNum)
+            } else if let setId {
+                // Sets, and CMFs (minifig-KIND rows that live in the `sets` table with no fig_num), resolve
+                // by their EXACT variant: a shared number's lowest variant is a different figure.
+                setIds.insert(setId)
             } else {
-                // Sets, and CMFs (minifig-KIND rows that live in the `sets` table with no fig_num) —
-                // both resolve against the set catalog by number (and, at read time, by set_id).
+                // A legacy set_id-less row: its number is all there is (resolves to the lowest variant).
                 setNumbers.insert(setNumber)
             }
         }
     }
 
+    /// The exact variant by set_id only — no number fallback.
+    func set(id: Int64) -> CatalogSet? {
+        _ = revision
+        return setsById[id]
+    }
+
+    /// The referenced row's catalog record: its exact variant by set_id, else (a legacy row) its number.
     func set(id: Int64?, number: String) -> CatalogSet? {
         _ = revision
         return id.flatMap { setsById[$0] } ?? setsByNumber[number]
-    }
-
-    func set(number: String) -> CatalogSet? {
-        _ = revision
-        return setsByNumber[number]
     }
 
     func minifig(_ figNum: String?) -> Minifig? {
@@ -69,10 +75,11 @@ final class CatalogOverlay {
     /// Throwing variant for callers that must know it worked (the retirement check).
     func load(_ keys: ReferencedKeys) async throws {
         guard AppConfig.isConfigured else { return }
-        let sets = try await CatalogRepository.shared.fetchSets(numbers: keys.setNumbers)
+        let byId = try await CatalogRepository.shared.fetchSets(ids: keys.setIds)
+        let byNumber = try await CatalogRepository.shared.fetchSets(numbers: keys.setNumbers)
         let figs = try await CatalogRepository.shared.fetchMinifigs(figNums: keys.figNums)
-        setsByNumber = sets.reduce(into: [:]) { $0[$1.setNumber] = $1 }
-        setsById = sets.reduce(into: [:]) { acc, s in if let id = s.setId { acc[id] = s } }
+        setsByNumber = byNumber.reduce(into: [:]) { $0[$1.setNumber] = $1 }
+        setsById = (byNumber + byId).reduce(into: [:]) { acc, s in if let id = s.setId { acc[id] = s } }
         figsByNum = figs.reduce(into: [:]) { $0[$1.figNum] = $1 }
         loadedKeys = keys
         isReady = true
@@ -99,9 +106,11 @@ enum DisplayBuilder {
     static func collectionItems(_ rows: [CollectionCopy]) -> [CollectionItem] {
         var order: [String] = []
         var groups: [String: [CollectionCopy]] = [:]
+        // One card per variant (`ItemKey`): two figures of one CMF series are two cards.
         for row in rows where !row.tombstoned {
-            if groups[row.setNumber] == nil { order.append(row.setNumber) }
-            groups[row.setNumber, default: []].append(row)
+            let key = row.variantKey
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(row)
         }
         return order.compactMap { groups[$0] }.map { collectionItem($0) }
     }
@@ -192,9 +201,9 @@ enum DisplayBuilder {
 
     static func referencedKeys(_ copies: [CollectionCopy], _ wishes: [WishlistItem], _ sales: [Sale]) -> CatalogOverlay.ReferencedKeys {
         var keys = CatalogOverlay.ReferencedKeys()
-        for r in copies where !r.tombstoned { keys.add(kind: r.itemKind, setNumber: r.setNumber, figNum: r.figNum) }
-        for r in wishes where !r.tombstoned { keys.add(kind: r.itemKind, setNumber: r.setNumber, figNum: r.figNum) }
-        for r in sales where !r.tombstoned { keys.add(kind: r.itemKind, setNumber: r.setNumber, figNum: r.figNum) }
+        for r in copies where !r.tombstoned { keys.add(kind: r.itemKind, setNumber: r.setNumber, figNum: r.figNum, setId: r.setId) }
+        for r in wishes where !r.tombstoned { keys.add(kind: r.itemKind, setNumber: r.setNumber, figNum: r.figNum, setId: r.setId) }
+        for r in sales where !r.tombstoned { keys.add(kind: r.itemKind, setNumber: r.setNumber, figNum: r.figNum, setId: r.setId) }
         return keys
     }
 }

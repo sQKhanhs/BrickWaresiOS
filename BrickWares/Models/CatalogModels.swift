@@ -28,6 +28,9 @@ struct CatalogSet: Identifiable, Hashable, Sendable {
 
     /// Canonical identity: a set number alone is not unique (CMF series share one number across variants).
     var id: String { "\(setNumber)-\(numberVariant)" }
+    /// Ownership identity (see `ItemKey`) and the keys it is recognized under (exact variant + legacy number).
+    var variantKey: String { ItemKey.of(setId: setId, setNumber: setNumber) }
+    var ownershipKeys: [String] { ItemKey.lookup(setId: setId, setNumber: setNumber) }
 
     /// A minifig represented as a fig-num-keyed CatalogSet so it can flow through the shared Add sheet.
     static func fromMinifig(_ fig: Minifig) -> CatalogSet {
@@ -72,4 +75,16 @@ struct ThemeSubthemeCount: Hashable, Sendable {
     var theme: String
     var subtheme: String
     var count: Int
+}
+
+/// The keys a Set Detail route accepts (see `CatalogRepository.fetchSet`): a catalog item's `CatalogSet.id`
+/// ("<number>-<variant>"), a bare number, or "sid:<set_id>". An owned row knows its set_id but not its
+/// variant number, so its card opens "sid:<id>" — the exact variant, not the number's lowest.
+enum CatalogKey {
+    static func forRow(setId: Int64?, setNumber: String) -> String { setId.map { "sid:\($0)" } ?? setNumber }
+
+    static func setId(_ key: String) -> Int64? {
+        guard key.hasPrefix("sid:") else { return nil }
+        return Int64(key.dropFirst(4))
+    }
 }

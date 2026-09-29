@@ -79,7 +79,7 @@ enum RetirementAlerts {
         // Only diff against AUTHORITATIVE statuses: force-refresh the referenced catalog first, and
         // skip the evaluation entirely when that fails (stored statuses may be stale either way).
         var keys = CatalogOverlay.ReferencedKeys()
-        rows.forEach { keys.add(kind: $0.itemKind, setNumber: $0.setNumber, figNum: $0.figNum) }
+        rows.forEach { keys.add(kind: $0.itemKind, setNumber: $0.setNumber, figNum: $0.figNum, setId: $0.setId) }
         do { try await CatalogOverlay.shared.load(keys) } catch { return false }
 
         let entries = DisplayBuilder.wishlist(rows)
@@ -99,14 +99,18 @@ enum RetirementAlerts {
     /// so re-evaluating the same data notifies nothing. Returns the newly-retired item names.
     static func evaluate(_ items: [WishlistEntry]) -> [String] {
         let settings = AppSettings.shared
-        let current = Set(items.map(\.setNumber))
-        let retiredNow = Set(items.filter { $0.status == .retired }.map(\.setNumber))
+        // Keyed on the variant, not the bare number: shared-number variants (CMF/SDCC) would collapse, so
+        // one retiring would alert — or suppress — its siblings. Baselines stored before this held bare
+        // numbers, which never equal a variant key: the first run after upgrading finds no overlap and
+        // silently re-baselines (no spurious alerts), exactly like Android.
+        let current = Set(items.map(\.variantKey))
+        let retiredNow = Set(items.filter { $0.status == .retired }.map(\.variantKey))
         let lastWishlist = settings.lastWishlist
         let lastRetired = settings.lastRetired
         let newly = retiredNow.filter { lastWishlist.contains($0) && !lastRetired.contains($0) }
         settings.lastWishlist = current
         settings.lastRetired = retiredNow
-        return items.filter { newly.contains($0.setNumber) }.map(\.name)
+        return items.filter { newly.contains($0.variantKey) }.map(\.name)
     }
 
     private static func notify(_ text: String) async {

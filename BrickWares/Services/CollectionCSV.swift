@@ -26,7 +26,7 @@ enum CollectionCSV {
 
     private static let columns = [
         "format_version", "record_type",
-        "set_number", "name", "item_kind", "fig_num", "set_id",
+        "set_number", "name", "item_kind", "fig_num", "set_id", "number_variant",
         "theme", "subtheme", "release_year", "release_month", "pieces", "minifigs",
         "retail_price", "status", "image_url",
         "quantity", "condition", "currency", "price_paid", "sale_price",
@@ -46,8 +46,14 @@ enum CollectionCSV {
 
     // MARK: Encode
 
+    /// `variantOf` maps a row's set_id to its catalog `number_variant` (Android parity): filled from the
+    /// set_id ONLY — blank for a legacy set_id-less row or an unknown id, never guessed from the number
+    /// (that would be the lowest variant, which a re-import would then wrongly pin to). It gives a
+    /// human-editable (set_number, number_variant) identity that `resolveSetId` can read back. The column is
+    /// additive and name-mapped, so older files and older apps are unaffected (no format bump).
     @MainActor
-    static func encode(copies: [CollectionCopy], sales: [Sale], wishlist: [WishlistItem]) -> String {
+    static func encode(copies: [CollectionCopy], sales: [Sale], wishlist: [WishlistItem],
+                       variantOf: (Int64?) -> Int? = { _ in nil }) -> String {
         var out = columns.map(escape).joined(separator: ",") + "\n"
         func append(_ row: [String: String]) {
             out += columns.map { escape(row[$0] ?? "") }.joined(separator: ",") + "\n"
@@ -58,6 +64,7 @@ enum CollectionCSV {
                 "format_version": v, "record_type": "collection",
                 "set_number": r.setNumber, "name": r.name, "item_kind": r.itemKind,
                 "fig_num": r.figNum ?? "", "set_id": r.setId.map(String.init) ?? "",
+                "number_variant": variantOf(r.setId).map(String.init) ?? "",
                 "theme": r.theme, "subtheme": r.subtheme,
                 "release_year": String(r.releaseYear), "release_month": String(r.releaseMonth),
                 "pieces": String(r.pieces), "minifigs": String(r.minifigs),
@@ -73,6 +80,7 @@ enum CollectionCSV {
                 "format_version": v, "record_type": "sale",
                 "set_number": r.setNumber, "name": r.name, "item_kind": r.itemKind,
                 "fig_num": r.figNum ?? "", "set_id": r.setId.map(String.init) ?? "",
+                "number_variant": variantOf(r.setId).map(String.init) ?? "",
                 "theme": r.theme,
                 "release_year": String(r.releaseYear), "release_month": String(r.releaseMonth),
                 "retail_price": r.retailPrice.map(String.init) ?? "", "image_url": r.imageUrl ?? "",
@@ -86,6 +94,7 @@ enum CollectionCSV {
                 "format_version": v, "record_type": "wishlist",
                 "set_number": r.setNumber, "name": r.name, "item_kind": r.itemKind,
                 "fig_num": r.figNum ?? "", "set_id": r.setId.map(String.init) ?? "",
+                "number_variant": variantOf(r.setId).map(String.init) ?? "",
                 "theme": r.theme, "subtheme": r.subtheme,
                 "release_year": String(r.releaseYear), "release_month": String(r.releaseMonth),
                 "pieces": String(r.pieces), "minifigs": String(r.minifigs),
@@ -157,8 +166,20 @@ enum CollectionCSV {
 
     // MARK: Rows → fresh dirty models
 
+    /// The set_id for an imported set row that carries none: the EXACT variant when the file gives a
+    /// `number_variant` that matches one, else the sole variant when the number has exactly one, else
+    /// **nil**. Never pins a shared number (CMF/SDCC) to its lowest variant — a set_id-less row of a
+    /// multi-variant number stays a legacy row (matched by number) rather than wrongly becoming variant 1,
+    /// which would later collide with the real variant as a second card. Android `resolveImportedSetId`.
+    static func resolveSetId(variant: Int?, among variants: [CatalogSet]) -> Int64? {
+        if let variant, let exact = variants.first(where: { $0.numberVariant == variant })?.setId { return exact }
+        return variants.count == 1 ? variants[0].setId : nil
+    }
+
+    /// `resolveSetId(number, numberVariant)` supplies the set_id of a set row the file leaves blank.
     @MainActor
-    static func rows(from parsed: Parsed, setIdByNumber: [String: Int64], now: Int64) -> Imported {
+    static func rows(from parsed: Parsed, now: Int64,
+                     resolveSetId: (_ number: String, _ variant: Int?) -> Int64?) -> Imported {
         var out = Imported()
         for row in parsed.rows {
             let kind = row.value("item_kind")?.lowercased() == "minifig" ? "minifig" : "set"
@@ -170,7 +191,8 @@ enum CollectionCSV {
                 ?? ((kind == "minifig" && setIdCol == nil) ? row.value("set_number")?.nilIfBlank : nil)
             guard let setNumber = row.value("set_number")?.nilIfBlank ?? figNum else { continue }
             let isFigRef = figNum != nil
-            let setId = isFigRef ? nil : (setIdCol ?? setIdByNumber[setNumber])
+            let setId = isFigRef ? nil
+                : (setIdCol ?? resolveSetId(setNumber, row.value("number_variant").flatMap { Int($0) }))
             let currency = AppCurrency(rawValue: (row.value("currency") ?? "").uppercased())?.rawValue ?? "USD"
             let condition = row.value("condition")?.lowercased() == "used" ? "used" : "new"
             let quantity = max(1, row.value("quantity").flatMap { Int($0) } ?? 1)

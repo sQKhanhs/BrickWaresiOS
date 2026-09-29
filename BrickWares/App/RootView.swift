@@ -80,9 +80,9 @@ private struct OwnershipKey: Equatable {
 
     @MainActor
     init(_ copies: [CollectionCopy], _ wishes: [WishlistItem], _ sales: [Sale]) {
-        owned = Set(copies.map(\.setNumber))
-        wishlisted = Set(wishes.map(\.setNumber))
-        sold = Set(sales.map(\.setNumber))
+        owned = Set(copies.map(\.variantKey))
+        wishlisted = Set(wishes.map(\.variantKey))
+        sold = Set(sales.map(\.variantKey))
     }
 }
 

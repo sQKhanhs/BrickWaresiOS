@@ -6,6 +6,8 @@ import SwiftUI
 @MainActor
 @Observable
 final class OwnershipIndex {
+    /// `ItemKey` variant keys of the user's active rows — so owning one figure of a CMF series doesn't
+    /// mark its siblings as owned.
     private(set) var owned: Set<String> = []
     private(set) var wishlisted: Set<String> = []
     private(set) var sold: Set<String> = []
@@ -16,7 +18,10 @@ final class OwnershipIndex {
         if self.sold != sold { self.sold = sold }
     }
 
-    func isOwnedOrSold(_ number: String) -> Bool { owned.contains(number) || sold.contains(number) }
+    // A catalog item matches on its exact variant, or on the bare number a legacy row carries.
+    func isOwned(_ item: CatalogSet) -> Bool { item.ownershipKeys.contains(where: owned.contains) }
+    func isWishlisted(_ item: CatalogSet) -> Bool { item.ownershipKeys.contains(where: wishlisted.contains) }
+    func isOwnedOrSold(_ item: CatalogSet) -> Bool { isOwned(item) || item.ownershipKeys.contains(where: sold.contains) }
 }
 
 /// Per-screen presenter for the shared item sheets, so lazily-recycled cards never own a sheet.
@@ -79,8 +84,8 @@ struct SetResultCard: View {
     @Environment(ValueService.self) private var values
     @Environment(ItemSheetCoordinator.self) private var sheets
 
-    private var isOwned: Bool { ownership.isOwnedOrSold(set.setNumber) }
-    private var isWishlisted: Bool { ownership.wishlisted.contains(set.setNumber) }
+    private var isOwned: Bool { ownership.isOwnedOrSold(set) }
+    private var isWishlisted: Bool { ownership.isWishlisted(set) }
 
     var body: some View {
         let _ = settings.ratesRevision
@@ -123,7 +128,7 @@ struct SetResultCard: View {
     @ViewBuilder private var actions: some View {
         HStack(spacing: 8) {
             if isOwned {
-                Button { sheets.details(set, tab: ownership.owned.contains(set.setNumber) ? .collection : .sales) } label: {
+                Button { sheets.details(set, tab: ownership.isOwned(set) ? .collection : .sales) } label: {
                     Label(L("action_see_detail"), systemImage: "checkmark")
                 }
                 .buttonStyle(.bwSecondaryCompact)
@@ -206,15 +211,15 @@ struct MinifigCard: View {
                 ValueLine(label: L("price_value"), value: values.value(forFig: fig.figNum))
 
                 HStack(spacing: 8) {
-                    if ownership.isOwnedOrSold(fig.figNum) {
-                        Button { sheets.details(asSet, tab: ownership.owned.contains(fig.figNum) ? .collection : .sales) } label: {
+                    if ownership.isOwnedOrSold(asSet) {
+                        Button { sheets.details(asSet, tab: ownership.isOwned(asSet) ? .collection : .sales) } label: {
                             Label(L("action_see_detail"), systemImage: "checkmark")
                         }
                         .buttonStyle(.bwSecondaryCompact)
                     } else {
                         Button { sheets.add(asSet, auth: auth) } label: { Label(L("action_add"), systemImage: "plus") }
                             .buttonStyle(.bwPrimaryCompact)
-                        WishlistButton(item: asSet, isWishlisted: ownership.wishlisted.contains(fig.figNum))
+                        WishlistButton(item: asSet, isWishlisted: ownership.isWishlisted(asSet))
                     }
                 }
                 .padding(.top, 3)

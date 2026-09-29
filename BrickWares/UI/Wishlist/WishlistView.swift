@@ -80,7 +80,7 @@ struct WishlistView: View {
     }
 
     private func remove(_ entry: WishlistEntry) {
-        collection.removeFromWishlist(setNumber: entry.setNumber)
+        collection.removeFromWishlist(setNumber: entry.setNumber, setId: entry.setId)
         router.showToast(L("toast_removed_wishlist", entry.name))
     }
 
@@ -119,7 +119,7 @@ private struct WishlistCard: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 5) {
-                Button { router.open(entry.figNum != nil ? .minifig(entry.setNumber) : .set(entry.setNumber)) } label: {
+                Button { router.open(entry.figNum != nil ? .minifig(entry.setNumber) : .set(CatalogKey.forRow(setId: entry.setId, setNumber: entry.setNumber))) } label: {
                     Text(verbatim: "\(entry.setNumber) \(entry.name)")
                         .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
                 }

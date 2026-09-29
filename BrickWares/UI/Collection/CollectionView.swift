@@ -223,7 +223,7 @@ struct CollectionView: View {
     private func confirmDelete(_ target: PendingDelete) {
         switch target {
         case .item(let item):
-            collection.removeItem(setNumber: item.setNumber)
+            collection.removeItem(setNumber: item.setNumber, setId: item.setId)
             router.showToast(L("toast_removed_collection", item.name))
         case .sale(let sale):
             collection.removeSale(id: sale.id)
@@ -306,10 +306,10 @@ struct OwnedItemCard: View {
                     Text(item.setNumber).font(.caption2).foregroundStyle(Bw.textMuted)
                     // A CMF is minifig-styled but lives in the set catalog — route it to Set detail;
                     // only a real in-set fig (figNum set) opens Minifig detail.
-                    titleButton(item.name) { router.open(item.figNum != nil ? .minifig(item.setNumber) : .set(item.setNumber)) }
+                    titleButton(item.name) { router.open(item.figNum != nil ? .minifig(item.setNumber) : .set(CatalogKey.forRow(setId: item.setId, setNumber: item.setNumber))) }
                     if item.minifigSetCount > 0 { MetaLine(L("minifig_in_sets_label"), String(item.minifigSetCount)) }
                 } else {
-                    titleButton("\(item.setNumber) \(item.name)") { router.open(.set(item.setNumber)) }
+                    titleButton("\(item.setNumber) \(item.name)") { router.open(.set(CatalogKey.forRow(setId: item.setId, setNumber: item.setNumber))) }
                     MetaLine(L("meta_theme"), item.theme)
                     MetaLine(L("meta_release"), releaseLabel(year: item.releaseYear, month: item.releaseMonth))
                     MetaLine(L("meta_pieces_minifigs"), "\(Money.count(item.pieces)) / \(item.minifigs)")
@@ -359,7 +359,7 @@ struct SoldItemCard: View {
             ItemThumb(urls: isFig ? [sale.imageUrl] : RowImages.card(imageUrl: sale.imageUrl, boxImageUrl: sale.boxImageUrl), size: 72)
 
             VStack(alignment: .leading, spacing: 5) {
-                Button { router.open(sale.figNum != nil ? .minifig(sale.setNumber) : .set(sale.setNumber)) } label: {
+                Button { router.open(sale.figNum != nil ? .minifig(sale.setNumber) : .set(CatalogKey.forRow(setId: sale.setId, setNumber: sale.setNumber))) } label: {
                     Text(isFig ? sale.name : "\(sale.setNumber) \(sale.name)")
                         .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
                 }

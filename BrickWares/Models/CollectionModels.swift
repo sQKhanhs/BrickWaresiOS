@@ -1,5 +1,24 @@
 import Foundation
 
+/// Ownership / grouping identity of an item (Android `variantKey`). A cataloged set — including each
+/// variant of a shared number, like the 25 figures of CMF series 71022 — is keyed by its `set_id`
+/// ("s<id>"); an in-set minifig, or a legacy row saved before `set_id` was tracked, falls back to its
+/// fig_num / set number ("n<number>"). The prefixes keep a bare number from ever equalling an id.
+enum ItemKey {
+    static func of(setId: Int64?, figNum: String? = nil, setNumber: String) -> String {
+        setId.map { "s\($0)" } ?? "n\(figNum ?? setNumber)"
+    }
+
+    /// The keys a CATALOG item is recognized under: its exact variant, plus the bare-number key a legacy
+    /// (set_id-less) row carries — ambiguous across a shared number until re-added, but it keeps a normal
+    /// owned set showing as owned.
+    static func lookup(setId: Int64?, setNumber: String) -> [String] {
+        let exact = of(setId: setId, setNumber: setNumber)
+        let legacy = "n\(setNumber)"
+        return exact == legacy ? [exact] : [exact, legacy]
+    }
+}
+
 /// One owned copy of an item. An item can hold several copies bought at different times, conditions
 /// and prices — this is what See Details lists and what the Add sheet creates.
 struct OwnedCopy: Identifiable, Hashable, Sendable {
@@ -40,7 +59,9 @@ struct CollectionItem: Identifiable, Hashable, Sendable {
     var setId: Int64?
     var figNum: String?
 
-    var id: String { setNumber }
+    /// One card per variant (see `ItemKey`): two variants of a shared number are two items.
+    var variantKey: String { ItemKey.of(setId: setId, figNum: figNum, setNumber: setNumber) }
+    var id: String { variantKey }
     var currentValue: Int64? { currentValueInfo?.amountUsdCents }
     var totalQty: Int { copies.reduce(0) { $0 + $1.qty } }
 
@@ -95,7 +116,10 @@ struct WishlistEntry: Identifiable, Hashable, Sendable {
     var setId: Int64?
     var figNum: String?
 
-    var id: String { setNumber }
+    var variantKey: String { ItemKey.of(setId: setId, figNum: figNum, setNumber: setNumber) }
+    /// The row id: the same item wishlisted on two devices before syncing is two rows, and a list keyed
+    /// on the item would collide.
+    var id: String { rowId }
     var currentValue: Int64? { currentValueInfo?.amountUsdCents }
     var valueShown: Bool { itemType == .minifig || status.showsCommunityValue }
 }
@@ -128,6 +152,7 @@ struct SoldItem: Identifiable, Hashable, Sendable {
     var setId: Int64?
     var figNum: String?
 
+    var variantKey: String { ItemKey.of(setId: setId, figNum: figNum, setNumber: setNumber) }
     var profit: Int64 { saleValue - pricePaid }
     var profitPercent: Double { pricePaid == 0 ? 0 : Double(profit) / Double(pricePaid) * 100.0 }
 }

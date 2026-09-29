@@ -224,7 +224,7 @@ struct CSVTests {
         #expect(CollectionCSV.version(of: parsed) == 2)
         #expect(parsed.rows.count == 3)
 
-        let back = CollectionCSV.rows(from: parsed, setIdByNumber: [:], now: 42)
+        let back = CollectionCSV.rows(from: parsed, now: 42) { _, _ in nil }
         #expect(back.copies.count == 1 && back.sales.count == 1 && back.wishlist.count == 1)
         let c = try #require(back.copies.first)
         #expect(c.name == "Millennium \"Falcon\", UCS")
@@ -247,7 +247,7 @@ struct CSVTests {
             acquiredOn: nil, notes: nil, updatedAt: 1, dirty: false
         )
         let parsed = CollectionCSV.parse(CollectionCSV.encode(copies: [cmf], sales: [], wishlist: []))
-        let back = try #require(CollectionCSV.rows(from: parsed, setIdByNumber: [:], now: 7).copies.first)
+        let back = try #require(CollectionCSV.rows(from: parsed, now: 7) { _, _ in nil }.copies.first)
         #expect(back.itemKind == "minifig" && back.setId == 71050 && back.figNum == nil && back.setNumber == "71050")
     }
 
@@ -256,7 +256,7 @@ struct CSVTests {
         let parsed = CollectionCSV.parse(v1)
         #expect(parsed.header.first == "set_number")
         #expect(CollectionCSV.version(of: parsed) == 1)
-        let rows = CollectionCSV.rows(from: parsed, setIdByNumber: ["10300": 77], now: 1)
+        let rows = CollectionCSV.rows(from: parsed, now: 1) { number, _ in number == "10300" ? 77 : nil }
         #expect(rows.copies.count == 1) // no record_type → collection copy
         #expect(rows.copies.first?.setId == 77) // resolved from the catalog map
         #expect(rows.copies.first?.quantity == 3)

@@ -91,10 +91,13 @@ final class CatalogRepository: Sendable {
         return Self.revealed(rows).uniqued(by: \.id)
     }
 
-    /// `catalogKey` is `CatalogSet.id` ("<number>-<variant>") or a bare number. Exact number+variant
-    /// first, then the number's lowest variant.
+    /// `catalogKey` is `CatalogSet.id` ("<number>-<variant>"), a bare number, or "sid:<set_id>" (an
+    /// owned row's exact variant — see `CatalogKey`). Exact variant first, then the number's lowest.
     @concurrent
     func fetchSet(_ catalogKey: String) async throws -> CatalogSet? {
+        if let sid = CatalogKey.setId(catalogKey) {
+            return try await fetchSets(ids: [sid]).first.flatMap { Self.isRevealed($0) ? $0 : nil }
+        }
         let number: String
         let variant: Int?
         if let dash = catalogKey.lastIndex(of: "-"), dash != catalogKey.startIndex,
@@ -124,6 +127,25 @@ final class CatalogRepository: Sendable {
             row = any.first
         }
         return row.map { $0.toCatalogSet() }.flatMap { Self.isRevealed($0) ? $0 : nil }
+    }
+
+    /// EVERY revealed variant of each number — unlike `fetchSets(numbers:)`, which keeps only the lowest.
+    /// Used to resolve an imported row's exact variant. Paged: a chunk of shared numbers (a CMF series
+    /// has up to 25 variants) can pass PostgREST's 1000-row cap.
+    @concurrent
+    func fetchSetVariants(numbers: some Collection<String>) async throws -> [CatalogSet] {
+        let keys = Array(Set(numbers.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }))
+        guard !keys.isEmpty else { return [] }
+        var rows: [SetRow] = []
+        for chunk in keys.chunked(Self.inChunk) {
+            rows += try await allPages {
+                $0.from("sets").select(Self.setCols)
+                    .in("set_number", values: chunk)
+                    .neq("name", value: Self.unrevealedName)
+                    .order("set_id", ascending: true)
+            } as [SetRow]
+        }
+        return Self.revealed(rows)
     }
 
     /// Batch resolve by set number; lowest variant per number wins (stable for CMF-style numbers).
