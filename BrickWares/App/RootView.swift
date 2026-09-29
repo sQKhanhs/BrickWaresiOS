@@ -86,28 +86,66 @@ private struct OwnershipKey: Equatable {
     }
 }
 
+/// The branded cold-start splash, ported from Android's `SplashScreen`: the brand ground (a bg → surface
+/// gradient with a soft yellow glow), the app-icon tile that springs into place with a slight overshoot,
+/// then the two-tone wordmark and a yellow ring spinner fading up. `RootView` holds it for a minimum beat
+/// (1.4 s, Android's `SPLASH_MIN_MS`) and cross-fades into the app.
 struct SplashView: View {
-    @State private var appeared = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var logoIn = false
+    @State private var contentIn = false
 
     var body: some View {
         ZStack {
-            Bw.bg.ignoresSafeArea()
-            VStack(spacing: 18) {
+            LinearGradient(colors: [Bw.bg, Bw.surface], startPoint: .top, endPoint: .bottom)
+
+            // Soft brand glow, nudged up to sit behind the tile (which leads the column).
+            RadialGradient(colors: [Bw.yellow.opacity(colorScheme == .dark ? 0.16 : 0.24), .clear],
+                           center: .center, startRadius: 0, endRadius: 170)
+                .frame(width: 340, height: 340)
+                .offset(y: -36)
+
+            VStack(spacing: 26) {
+                // App-icon tile — continuity from the home-screen icon the user just tapped.
                 Image("brand_logo")
                     .resizable().scaledToFit()
-                    .frame(width: 148, height: 148)
-                    // The artwork has an opaque white backdrop, so present it as an app-icon tile.
-                    .clipShape(RoundedRectangle(cornerRadius: 33, style: .continuous))
-                    .shadow(color: .black.opacity(0.12), radius: 14, y: 6)
-                    .scaleEffect(appeared ? 1 : 0.86)
-                Text(verbatim: "BrickWares")
-                    .font(.system(size: 30, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Bw.text)
+                    .frame(width: 112, height: 112)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .shadow(color: .black.opacity(0.14), radius: 14, y: 6)
+                    .scaleEffect(logoIn ? 1 : 0.72)
+                BrandWordmark(size: 34)
+                    .opacity(contentIn ? 1 : 0)
             }
-            .opacity(appeared ? 1 : 0)
+
+            SplashSpinner()
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 64)
+                .opacity(contentIn ? 1 : 0)
         }
-        .onAppear { withAnimation(.spring(duration: 0.7)) { appeared = true } }
+        .ignoresSafeArea()
+        .onAppear {
+            // Android: spring(dampingRatio 0.5, stiffness Low = 200) → response 2π/√200 ≈ 0.44 s.
+            withAnimation(reduceMotion ? nil : .spring(response: 0.44, dampingFraction: 0.5)) { logoIn = true }
+            // Android: tween(600, FastOutSlowInEasing) = cubic-bezier(0.4, 0, 0.2, 1).
+            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.6)) { contentIn = true }
+        }
         .accessibilityHidden(true)
+    }
+}
+
+/// Indeterminate yellow ring — Android's `CircularProgressIndicator` (26 pt, 2.5 pt stroke).
+private struct SplashSpinner: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1)
+            Circle()
+                .trim(from: 0, to: 0.75)
+                .stroke(Bw.yellow, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(turn * 360))
+        }
+        .frame(width: 26, height: 26)
     }
 }
 

@@ -87,7 +87,8 @@ struct CollectionView: View {
         let sold = sold
         List {
             Group {
-                BannerImage(name: mode == .collection ? "collection_banner" : "sales_banner")
+                BannerImage(name: mode == .collection ? "collection_banner" : "sales_banner",
+                            title: mode == .collection ? L("collection_title") : L("sales_title"))
                 if mode == .collection {
                     collectionSections(items)
                 } else {
@@ -101,7 +102,8 @@ struct CollectionView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .bwScreen()
-        .navigationTitle(mode == .collection ? L("collection_title") : L("sales_title"))
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Picker("", selection: $mode.animation(.snappy)) {
@@ -136,11 +138,11 @@ struct CollectionView: View {
 
     @ViewBuilder private func collectionSections(_ items: [CollectionItem]) -> some View {
         let summary = CollectionStats.summary(of: items, display: settings.currency)
-        HStack(spacing: 10) {
-            StatTile(value: Money.count(summary.setCount), label: L("stat_sets"))
-            StatTile(value: Money.count(summary.minifigCount), label: L("stat_minifigs"))
-            StatTile(value: Money.count(summary.pieceCount), label: L("stat_pieces"))
-        }
+        StatCardRow(entries: [
+            StatEntry(icon: "ic_bw_set", value: Money.count(summary.setCount), label: L("stat_sets")),
+            StatEntry(icon: "ic_bw_minifig", value: Money.count(summary.minifigCount), label: L("stat_minifigs")),
+            StatEntry(icon: "ic_bw_pieces", value: Money.count(summary.pieceCount), label: L("stat_pieces")),
+        ])
         if !auth.isSignedIn {
             SignInPromptCard(message: L("collection_signin_prompt"))
         } else {

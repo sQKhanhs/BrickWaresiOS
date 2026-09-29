@@ -25,16 +25,32 @@ struct HomeView: View {
         let currency = settings.currency
         let summary = CollectionStats.summary(of: items, display: currency)
         let themes = CollectionStats.themeSummaries(of: items, display: currency)
+        let canShare = auth.isSignedIn && summary.setCount + summary.minifigCount > 0
 
         ScrollView {
             VStack(spacing: 16) {
+                HStack {
+                    BrandWordmark()
+                    Spacer()
+                    if canShare {
+                        Button { showShare = true } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 16, weight: .semibold)).foregroundStyle(Bw.text)
+                                .frame(width: 40, height: 40).background(Bw.card, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("home_share_cd"))
+                    }
+                }
+                .padding(.top, 4)
+
                 HeroCard(summary: summary, currency: currency)
 
-                HStack(spacing: 10) {
-                    StatTile(value: Money.count(summary.setCount), label: L("stat_sets"))
-                    StatTile(value: Money.count(summary.minifigCount), label: L("stat_minifigs"))
-                    StatTile(value: Money.count(summary.pieceCount), label: L("stat_pieces"))
-                }
+                StatCardRow(entries: [
+                    StatEntry(icon: "ic_bw_set", value: Money.count(summary.setCount), label: L("stat_sets")),
+                    StatEntry(icon: "ic_bw_minifig", value: Money.count(summary.minifigCount), label: L("stat_minifigs")),
+                    StatEntry(icon: "ic_bw_pieces", value: Money.count(summary.pieceCount), label: L("stat_pieces")),
+                ])
 
                 if !auth.isSignedIn {
                     SignInPromptCard(message: L("home_signin_prompt")).bwCard(padding: 0)
@@ -48,24 +64,19 @@ struct HomeView: View {
             .padding(.bottom, 24)
         }
         .bwScreen()
-        .navigationTitle(Text(verbatim: "BrickWares"))
-        .toolbar {
-            if auth.isSignedIn, summary.setCount + summary.minifigCount > 0 {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showShare = true } label: { Image(systemName: "square.and.arrow.up") }
-                        .accessibilityLabel(L("home_share_cd"))
-                }
-            }
-        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showShare) {
             ShareCollectionSheet(items: items, summary: summary, themes: themes, memberName: auth.user?.displayName)
         }
-        .task { await loadNewSets() }
+        .task { if newSets.isEmpty { await loadNewSets() } }
         .refreshable { await loadNewSets() }
     }
 
-    /// A random five of the current "new sets" — reshuffled on each load, like Android. Best-effort:
-    /// a catalog failure just leaves the card absent.
+    /// A random five of the current "new sets", picked once per session like Android's `newSetsLoaded`.
+    /// `.task` re-runs on every tab return / back-navigation, so it only loads while the card is still
+    /// empty (first appearance, or a retry after a failed load); pull-to-refresh deliberately reshuffles.
+    /// Best-effort: a catalog failure just leaves the card absent.
     private func loadNewSets() async {
         guard AppConfig.isConfigured, let candidates = try? await CatalogRepository.shared.newSetCandidates() else { return }
         newSets = Array(NewSets.select(candidates).shuffled().prefix(5))
@@ -85,8 +96,15 @@ private struct HeroCard: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if showsDrop {
-                Image("lego_drop_poster").resizable().scaledToFill()
-                    .frame(maxWidth: .infinity).frame(height: 250).clipped()
+                // `scaledToFill` reports width = 250·aspect (wider than the screen), and
+                // `.frame(maxWidth:.infinity)` does NOT cap it — so the image drove the ZStack, and thus
+                // the whole card, past the gutter and off both screen edges once the collection was large
+                // enough to show this art. Anchor width to a bounded Color; the fill image overflows into
+                // the clip instead of dictating layout.
+                Color.clear
+                    .frame(height: 250)
+                    .overlay { Image("lego_drop_poster").resizable().scaledToFill() }
+                    .clipped()
             } else {
                 Color(hex: 0xF4F4F2)
                 Image("no_value").resizable().scaledToFit()

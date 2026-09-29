@@ -13,6 +13,12 @@ struct SearchView: View {
             ScrollView {
                 LazyVStack(spacing: 12) {
                     Color.clear.frame(height: 0).id(topID)
+                    // Banner then search field — the banner is always the first (scrolling) item and the
+                    // field sits right under it, matching Android; keeping the field unconditional here
+                    // preserves its first-responder as browse/suggestions/results swap below.
+                    BannerImage(name: "search_banner",
+                                title: model.mode == .sets ? L("search_title") : L("search_title_minifigs"))
+                    SearchField(text: $model.query, prompt: L("search_placeholder")) { model.submit() }
                     if model.showBrowse {
                         browse
                     } else if model.showSuggestions {
@@ -30,11 +36,8 @@ struct SearchView: View {
             .onChange(of: model.homeScrollTick) { _, _ in withAnimation { proxy.scrollTo(topID, anchor: .top) } }
         }
         .bwScreen()
-        .navigationTitle(model.mode == .sets ? L("search_title") : L("search_title_minifigs"))
-        .searchable(text: $model.query, placement: .navigationBarDrawer(displayMode: .always), prompt: L("search_placeholder"))
-        .autocorrectionDisabled()
-        .textInputAutocapitalization(.never)
-        .onSubmit(of: .search) { model.submit() }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .itemSheets()
         .task { await model.loadBrowse() }
         .onChange(of: router.searchResetTick) { _, _ in model.resetToHome() }
@@ -44,8 +47,6 @@ struct SearchView: View {
 
     @ViewBuilder private var browse: some View {
         @Bindable var model = model
-        BannerImage(name: "search_banner")
-
         HStack(spacing: 8) {
             Picker("", selection: $model.mode) {
                 Text(L("stat_sets")).tag(SearchMode.sets)
@@ -169,6 +170,36 @@ struct SearchView: View {
                 }
             }
         }
+    }
+}
+
+/// The in-content search bar (replaces `.searchable` so it can sit under the banner, like Android).
+private struct SearchField: View {
+    @Binding var text: String
+    var prompt: String
+    var onSubmit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.subheadline).foregroundStyle(Bw.textMuted)
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .foregroundStyle(Bw.text)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+                .onSubmit(onSubmit)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Bw.textFaint)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(verbatim: "Clear"))
+            }
+        }
+        .padding(.horizontal, 12).frame(height: 44)
+        .background(Bw.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Bw.border))
     }
 }
 

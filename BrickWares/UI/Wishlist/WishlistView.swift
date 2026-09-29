@@ -24,12 +24,12 @@ struct WishlistView: View {
         let entries = entries
         List {
             Group {
-                BannerImage(name: "wishlist_banner")
-                HStack(spacing: 10) {
-                    StatTile(value: Money.count(entries.filter { $0.itemType == .set }.count), label: L("stat_sets"))
-                    StatTile(value: Money.count(entries.filter { $0.itemType == .minifig }.count), label: L("stat_minifigs"))
-                    StatTile(value: Money.count(entries.reduce(0) { $0 + $1.pieces }), label: L("stat_pieces"))
-                }
+                BannerImage(name: "wishlist_banner", title: L("wishlist_title"))
+                StatCardRow(entries: [
+                    StatEntry(icon: "ic_bw_set", value: Money.count(entries.filter { $0.itemType == .set }.count), label: L("stat_sets")),
+                    StatEntry(icon: "ic_bw_minifig", value: Money.count(entries.filter { $0.itemType == .minifig }.count), label: L("stat_minifigs")),
+                    StatEntry(icon: "ic_bw_pieces", value: Money.count(entries.reduce(0) { $0 + $1.pieces }), label: L("stat_pieces")),
+                ])
                 if !auth.isSignedIn {
                     SignInPromptCard(message: L("wishlist_signin_prompt"))
                 } else {
@@ -66,7 +66,8 @@ struct WishlistView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .bwScreen()
-        .navigationTitle(L("wishlist_title"))
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if auth.isSignedIn, connectivity.isOnline {
                 ToolbarItem(placement: .primaryAction) {

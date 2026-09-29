@@ -178,13 +178,36 @@ struct SignInPromptCard: View {
 /// Wide illustrated banner at the top of a tab.
 struct BannerImage: View {
     let name: String
+    /// When set, the tab title is drawn over the banner (with a scrim), matching Android's `Banner`.
+    var title: String? = nil
 
     var body: some View {
-        Image(name)
-            .resizable().scaledToFill()
-            .frame(maxWidth: .infinity).frame(height: 132)
+        // Anchor the width to a bounded Color and overlay the fill image: `scaledToFill` reports a
+        // width of 150·aspect (wider than the screen) and `.frame(maxWidth:.infinity)` does NOT cap it,
+        // so a bare fill image overflows any non-clipping container (a raw ScrollView — Home/Search — vs a
+        // List, which happens to clip its rows). The clipShape bounds the overflowing image to the card.
+        Color.clear
+            .frame(height: 150)
+            .overlay { Image(name).resizable().scaledToFill() }
+            .overlay {
+                if title != nil {
+                    // Scrim so the white title stays legible over any image (Android: 0.2 → 0.6 black).
+                    LinearGradient(colors: [.black.opacity(0.2), .black.opacity(0.6)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+            }
+            .overlay(alignment: .leading) {
+                if let title {
+                    Text(title)
+                        .font(.system(size: 24, weight: .black)).tracking(-0.24)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: Bw.cardRadius, style: .continuous))
-            .accessibilityHidden(true)
+            .accessibilityElement()
+            .accessibilityLabel(title ?? "")
+            .accessibilityHidden(title == nil)
     }
 }
 
@@ -203,6 +226,56 @@ struct StatTile: View {
         }
         .frame(maxWidth: .infinity)
         .bwCard(padding: 12)
+    }
+}
+
+/// One column in a `StatCardRow`: an outline icon, a big count, and a label.
+struct StatEntry: Identifiable {
+    let icon: String
+    let value: String
+    let label: String
+    var id: String { label }
+}
+
+/// The shared yellow-framed stat card (Sets / Minifigs / Pieces) used on Home, Collection and Wishlist,
+/// matching Android's `StatCardRow`: a 2pt yellow frame (r16) around a white card (r14) of equal-width
+/// columns, each an outline icon (22, muted) + Black-22 number + Medium-12 label.
+struct StatCardRow: View {
+    let entries: [StatEntry]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(entries) { entry in
+                VStack(spacing: 0) {
+                    Image(entry.icon).renderingMode(.template).resizable().scaledToFit()
+                        .frame(width: 22, height: 22).foregroundStyle(Bw.textMuted2)
+                    Spacer().frame(height: 8)
+                    Text(entry.value).font(.system(size: 22, weight: .black)).foregroundStyle(Bw.text)
+                        .minimumScaleFactor(0.5).lineLimit(1).contentTransition(.numericText())
+                    Spacer().frame(height: 2)
+                    Text(entry.label).font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Bw.textMuted).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.vertical, 18).padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .background(Bw.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(2)
+        .background(Bw.yellow, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+/// "Brick" + yellow "Wares" wordmark, matching Android (BwType.wordmark: Black weight, 24pt, tight tracking).
+struct BrandWordmark: View {
+    var size: CGFloat = 24
+
+    var body: some View {
+        (Text(verbatim: "Brick").foregroundStyle(Bw.text)
+            + Text(verbatim: "Wares").foregroundStyle(Bw.yellow))
+            .font(.system(size: size, weight: .black))
+            .tracking(-0.24)
     }
 }
 
