@@ -116,6 +116,10 @@ struct AddToCollectionSheet: View {
                         TextField(L("sheet_note_optional"), text: $note, axis: .vertical)
                             .lineLimit(3...6)
                             .focused($focus, equals: .note)
+                            // The server rejects a longer note; cap it where it's typed, not silently on save.
+                            .onChange(of: note) { _, new in
+                                if let capped = UserDataLimits.capNote(new), capped != new { note = capped }
+                            }
                     }
                 }
             }

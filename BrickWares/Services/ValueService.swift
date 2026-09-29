@@ -203,26 +203,53 @@ final class ValueService {
 /// Timestamp helpers for PostgREST `timestamptz` strings ("…Z" or "…+00:00", with or without
 /// fractional seconds — Postgres emits microseconds).
 enum ISO8601 {
-    /// Epoch millis, or 0 on a missing/unparseable stamp (so LWW keeps local, like Android).
+    // ISO8601DateFormatter is thread-safe; build each once instead of per row.
+    private static let wholeSeconds: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let utcMillis: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
+    /// Epoch millis (truncated, like Android's `toEpochMilli`), or 0 on a missing/unparseable stamp —
+    /// which LWW reads as "older than anything", so it never overwrites local data.
     static func millis(_ s: String?) -> Int64 {
-        guard let s, let date = date(s) else { return 0 }
-        return Int64((date.timeIntervalSince1970 * 1000).rounded())
+        guard let s, let us = micros(s) else { return 0 }
+        return us / 1000
     }
 
     static func date(_ s: String) -> Date? {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = withFraction.date(from: s) { return d }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: s)
+        micros(s).map { Date(timeIntervalSince1970: Double($0) / 1_000_000) }
+    }
+
+    /// Epoch microseconds at the FULL precision Postgres stores, or nil when unparseable. A `timestamptz`
+    /// comes back with 0–6 fractional digits ("…43Z", "…43.165+00:00", "…43.165753+00:00");
+    /// `ISO8601DateFormatter` rejects anything but exactly its own fraction form, so the fraction is split
+    /// off and read by hand. Microseconds matter for pull cursors: rows a few µs apart must not compare
+    /// equal, or keyset paging could skip one.
+    static func micros(_ s: String) -> Int64? {
+        guard let t = s.firstIndex(of: "T") else { return nil }
+        var whole = s
+        var fraction = Substring("")
+        if let dot = s[t...].firstIndex(of: ".") {
+            let digits = s.index(after: dot)
+            let end = s[digits...].firstIndex { !("0"..."9").contains($0) } ?? s.endIndex
+            fraction = s[digits..<end]
+            whole = String(s[..<dot] + s[end...])
+        }
+        guard let date = wholeSeconds.date(from: whole) else { return nil }
+        let micros = Int64((fraction + "000000").prefix(6)) ?? 0
+        return Int64(date.timeIntervalSince1970.rounded()) * 1_000_000 + micros
     }
 
     /// `Instant.toString()` analog: UTC, millisecond precision, "Z" suffix.
     static func string(millis: Int64) -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        return f.string(from: Date(timeIntervalSince1970: Double(millis) / 1000))
+        utcMillis.string(from: Date(timeIntervalSince1970: Double(millis) / 1000))
     }
 }

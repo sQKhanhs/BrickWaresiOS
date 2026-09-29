@@ -12,6 +12,11 @@ import os
 /// `server_updated_at` (DB trigger) says when the row landed and decides what a device still has to
 /// fetch — a cursor on client time would miss another device's late-landing offline edit.
 ///
+/// A round PULLS first, then pushes (Android `SyncCoordinator`): a newer remote row — say another
+/// device's delete — is applied before a stale offline edit of it could be pushed, and the server's
+/// `reject_stale_update` trigger backstops any stale push that slips through. Pull and push are
+/// isolated, so a failure in one half never skips the other; the pure rules live in `SyncRules`.
+///
 /// Runs entirely off the main actor. Each phase uses a **fresh** `ModelContext` so it always reads
 /// what the UI's context last saved, and the dirty flag is only cleared when the row is unchanged
 /// since it was pushed (an edit made mid-push stays dirty for the next run).
@@ -19,7 +24,6 @@ import os
 actor SyncEngine {
     private var running: Task<Bool, Never>?
 
-    private static let pageSize = 1000
     private static let log = Logger(subsystem: "com.senniapp.brickwares", category: "Sync")
 
     private var client: SupabaseClient { SupabaseProvider.client }
@@ -37,6 +41,11 @@ actor SyncEngine {
             syncState.clearPullCursors()
             switched = true
         }
+        // Record local ownership NOW, before syncing: past this point the local store holds this account's
+        // data (freshly wiped for a switch, or already its own). Recording it only after a SUCCESSFUL sync
+        // left a window where a failed first sync kept the previous owner — or none — on record, so the
+        // next account to sign in skipped the wipe and pushed the first account's dirty rows as its own.
+        syncState.setLastAccountId(uid)
         return (await sync(uid: uid), switched)
     }
 
@@ -62,56 +71,96 @@ actor SyncEngine {
     }
 
     private func performSync(uid: String) async -> Bool {
-        do {
-            try await push(uid: uid)
-            try await pull()
-            syncState.setLastAccountId(uid)
-            return true
-        } catch {
-            Self.log.error("sync failed: \(String(describing: error))")
-            return false
+        // PULL before push, each half isolated (its own catch) so a failure in one never skips the other —
+        // a rejected push still lets the pull through, and vice versa. The round succeeds only when both
+        // halves ran; the scheduler retries a failed one.
+        var ok = true
+        do { try await pull() } catch {
+            ok = false
+            Self.log.error("pull failed: \(String(describing: error))")
         }
+        do { try await push(uid: uid) } catch {
+            ok = false
+            Self.log.error("push failed: \(String(describing: error))")
+        }
+        return ok
     }
 
     // MARK: Push (dirty local → Supabase upsert)
 
+    /// The three tables push INDEPENDENTLY: a rejected batch in one must not skip the others. The first
+    /// failure is rethrown at the end so the round still reports it.
     private func push(uid: String) async throws {
-        let ctx = ModelContext(modelContainer)
-
-        let copies = try CollectionCopy.fetchDirty(in: ctx)
-        let copyRows = copies.compactMap { RemoteCopy($0, uid: uid) }
-        let copyStamps = copies.map { Pushed(id: $0.id, updatedAt: $0.updatedAt) }
-        let copyValues = copies.compactMap { Contribution(copy: $0) }
-
-        let wishes = try WishlistItem.fetchDirty(in: ctx)
-        let wishRows = wishes.compactMap { RemoteWish($0, uid: uid) }
-        let wishStamps = wishes.map { Pushed(id: $0.id, updatedAt: $0.updatedAt) }
-
-        let sales = try Sale.fetchDirty(in: ctx)
-        let saleRows = sales.compactMap { RemoteSale($0, uid: uid) }
-        let saleStamps = sales.map { Pushed(id: $0.id, updatedAt: $0.updatedAt) }
-        let saleValues = sales.compactMap { Contribution(sale: $0) }
-
-        // Never send an empty batch. A row with neither set_id nor fig_num can't be mapped to a remote
-        // row; it is still marked clean (it can never sync) so it doesn't re-queue forever.
-        if !copyStamps.isEmpty {
-            if !copyRows.isEmpty { try await client.from("collection_copies").upsert(copyRows, returning: .minimal).execute() }
-            try clearDirty(CollectionCopy.self, copyStamps)
-            // Publish paid prices as community value points — AFTER the rows are upserted so the
+        var failures: [any Error] = []
+        do {
+            // Paid prices are published as community value points AFTER their rows land, so the
             // server-side owner-gate can see them.
-            await contribute(copyValues)
-        }
-        if !wishStamps.isEmpty {
-            if !wishRows.isEmpty { try await client.from("wishlist_items").upsert(wishRows, returning: .minimal).execute() }
-            try clearDirty(WishlistItem.self, wishStamps)
-        }
-        if !saleStamps.isEmpty {
-            if !saleRows.isEmpty { try await client.from("sales").upsert(saleRows, returning: .minimal).execute() }
-            try clearDirty(Sale.self, saleStamps)
+            try await pushTable("collection_copies", CollectionCopy.self,
+                                remote: { RemoteCopy($0, uid: uid) }, contribution: { Contribution(copy: $0) })
+        } catch { failures.append(error) }
+        do {
+            try await pushTable("wishlist_items", WishlistItem.self,
+                                remote: { RemoteWish($0, uid: uid) }, contribution: { _ in nil })
+        } catch { failures.append(error) }
+        do {
             // Contributed last so, when a user has both a paid copy and a sale of the same item, the
             // realized sale wins the single per-user point — it is the better signal.
-            await contribute(saleValues)
+            try await pushTable("sales", Sale.self,
+                                remote: { RemoteSale($0, uid: uid) }, contribution: { Contribution(sale: $0) })
+        } catch { failures.append(error) }
+        if let first = failures.first { throw first }
+    }
+
+    private func pushTable<M: SyncableRow, R: RemoteRow>(
+        _ table: String, _ type: M.Type,
+        remote: (M) -> R?, contribution: (M) -> Contribution?
+    ) async throws {
+        let ctx = ModelContext(modelContainer)
+        let dirty = try M.fetchDirty(in: ctx)
+        guard !dirty.isEmpty else { return }
+        // Snapshot everything the network half needs before awaiting.
+        let rows = dirty.compactMap(remote)
+        let stamps = dirty.map { Pushed(id: $0.id, updatedAt: $0.updatedAt) }
+        let points = dirty.compactMap { row in contribution(row).map { (id: row.id, point: $0) } }
+
+        let rejected = try await upsertRows(table, rows)
+        // A REJECTED row stays dirty — never claimed as synced — and retries next round. A row with neither
+        // set_id nor fig_num can't map to a remote row; it is still marked clean (it can never sync) so it
+        // doesn't re-queue forever.
+        try clearDirty(M.self, stamps.filter { !rejected.contains($0.id) })
+        await contribute(points.filter { !rejected.contains($0.id) }.map { $0.point })
+        if !rejected.isEmpty { throw PushRejected(table: table, ids: rejected) }
+    }
+
+    /// Upsert `rows` as one batch; if the server rejects the batch because of a ROW's content (one bad row
+    /// fails the whole statement — see `SyncRules.isRowRejection`), fall back to one upsert per row so the
+    /// good rows still land, and return the ids it rejected. Any other failure (offline, timeout, expired
+    /// session, 5xx) is not retried row by row — it would fail every row for the same reason — and
+    /// propagates, so the round counts as failed and the scheduler retries it.
+    private func upsertRows<R: RemoteRow>(_ table: String, _ rows: [R]) async throws -> Set<String> {
+        guard !rows.isEmpty else { return [] }
+        do {
+            try await client.from(table).upsert(rows, returning: .minimal).execute()
+            return []
+        } catch let error as PostgrestError where SyncRules.isRowRejection(sqlState: error.code) {
+            Self.log.warning("\(table) batch rejected (\(error.code ?? "?")) — pushing row by row")
         }
+        var rejected = Set<String>()
+        for row in rows {
+            do {
+                try await client.from(table).upsert(row, returning: .minimal).execute()
+            } catch let error as PostgrestError where SyncRules.isRowRejection(sqlState: error.code) {
+                rejected.insert(row.id)
+                Self.log.error("\(table) rejected row \(row.id): \(error.code ?? "?") \(error.message)")
+            }
+        }
+        return rejected
+    }
+
+    private struct PushRejected: Error, CustomStringConvertible {
+        let table: String
+        let ids: Set<String>
+        var description: String { "\(table): \(ids.count) row(s) rejected by the server (\(ids.sorted().joined(separator: ", ")))" }
     }
 
     private struct Pushed { var id: String; var updatedAt: Int64 }
@@ -184,7 +233,7 @@ actor SyncEngine {
             row.acquiredOn = r.acquiredOn; row.notes = r.notes
         } display: { Display(setId: $0.setId, figNum: $0.figNum, sets: sets, figs: figs) }
 
-        try apply(wishes, table: "wishlist_items", WishlistItem.self) { r, d in
+        let appliedWishes = try apply(wishes, table: "wishlist_items", WishlistItem.self) { r, d in
             WishlistItem(
                 id: r.id, setId: r.setId, figNum: r.figNum, itemKind: r.itemKind,
                 setNumber: d.setNumber, name: d.name, theme: d.theme, subtheme: d.subtheme,
@@ -201,6 +250,7 @@ actor SyncEngine {
                 row.retailPrice = d.retailPrice; row.status = d.status; row.imageUrl = d.imageUrl
             }
         } display: { Display(setId: $0.setId, figNum: $0.figNum, sets: sets, figs: figs) }
+        try tombstoneWishlistDuplicates(of: wishes, applied: appliedWishes)
 
         try apply(sales, table: "sales", Sale.self) { r, d in
             Sale(
@@ -226,59 +276,102 @@ actor SyncEngine {
         } display: { Display(setId: $0.setId, figNum: $0.figNum, sets: sets, figs: figs) }
     }
 
-    /// One table's rows stamped after its cursor, ascending, **paged until drained** (PostgREST caps a
-    /// page at max_rows). The cursor itself is advanced only after the rows apply.
+    /// Every row of one table past its cursor, **paged until drained** by keyset on
+    /// (server_updated_at, id) — see `SyncRules.Cursor`: a bulk upsert stamps all its rows with ONE server
+    /// time, and a stamp-only `>` cursor advanced past a capped page lost every sibling row at that stamp.
+    /// Each page continues from the LAST ROW of the previous one (never an offset: a row re-stamped by
+    /// another device mid-pull sorts to the end and would shift later rows, skipping one), until a short
+    /// page; rows are then de-duplicated by id. The stored cursor advances only after the rows apply.
     private func fetchTable<T: RemoteRow>(_ table: String) async throws -> [T] {
-        var all: [T] = []
-        var cursor = syncState.pullCursor(table)
+        var cursor = SyncRules.Cursor.decode(syncState.pullCursor(table))
+        var pages: [[T]] = []
         while true {
             var query = client.from(table).select()
-            if let cursor { query = query.gt("server_updated_at", value: cursor) }
+            if let cursor {
+                if let after = cursor.afterFilter {
+                    query = query.or(after)
+                } else {
+                    query = query.gt("server_updated_at", value: cursor.stamp) // pre-keyset cursor
+                }
+            }
             let page: [T] = try await query
                 .order("server_updated_at", ascending: true)
-                .limit(Self.pageSize)
+                .order("id", ascending: true)
+                .limit(SyncRules.pullPageSize)
                 .execute().value
-            all += page
-            guard page.count >= Self.pageSize, let last = page.last?.serverUpdatedAt else { break }
-            cursor = last
+            pages.append(page)
+            guard !SyncRules.isLastPage(page.count), let last = page.last, let stamp = last.serverUpdatedAt else { break }
+            cursor = SyncRules.Cursor(stamp: stamp, lastId: last.id)
         }
-        return all
+        return SyncRules.mergePages(pages) { $0.id }
     }
 
-    /// LWW merge of one table's pulled rows, then advance that table's cursor to the newest SERVER
-    /// stamp received (rows are ascending, so that's the last one — never the client clock).
+    /// LWW merge of one table's pulled rows (`SyncRules.remoteWins` — a strictly newer remote row
+    /// replaces the local one even when it is dirty), then advance that table's cursor to the newest
+    /// SERVER stamp + id received — never the client clock. Returns the ids actually applied.
+    @discardableResult
     private func apply<R: RemoteRow, M: SyncableRow>(
         _ remote: [R], table: String, _ type: M.Type,
         insert: (R, Display) -> M,
         update: (M, R, Display?) -> Void,
         display: (R) -> Display?
-    ) throws {
-        guard !remote.isEmpty else { return }
+    ) throws -> Set<String> {
+        guard !remote.isEmpty else { return [] }
         let ctx = ModelContext(modelContainer)
         let ids = remote.map(\.id)
         var local: [String: M] = [:]
         for chunk in ids.chunked(500) {
             for row in try M.fetch(ids: chunk, in: ctx) { local[row.id] = row }
         }
+        var applied = Set<String>()
         for r in remote {
             let remoteAt = ISO8601.millis(r.updatedAt)
             if let existing = local[r.id] {
-                // Local wins when it has unpushed edits or is at least as new (LWW on client time).
-                if existing.dirty || existing.updatedAt >= remoteAt { continue }
+                guard SyncRules.remoteWins(local: existing.updatedAt, remote: remoteAt) else { continue }
                 update(existing, r, r.deleted ? nil : display(r))
                 existing.tombstoned = r.deleted
                 existing.updatedAt = remoteAt
                 existing.dirty = false
+                applied.insert(r.id)
             } else {
                 // A tombstone for a row this device never had needs no local record.
                 guard !r.deleted, let d = display(r) else { continue }
                 let row = insert(r, d)
                 ctx.insert(row)
                 local[r.id] = row
+                applied.insert(r.id)
             }
         }
         try ctx.save()
-        if let newest = remote.last?.serverUpdatedAt { syncState.setPullCursor(table, newest) }
+        if let next = SyncRules.nextCursor(remote, stamp: { $0.serverUpdatedAt }, id: { $0.id }) {
+            syncState.setPullCursor(table, next.encoded)
+        }
+        return applied
+    }
+
+    /// The server allows ONE live wishlist row per user per item. If this device minted its own row for
+    /// an item another device already synced (both wishlisted it offline), the local row would violate
+    /// the unique index on every push, forever. The remote row is the one the server holds, so it
+    /// survives; the local duplicate is tombstoned (dirty, so the tombstone pushes — deleted rows are
+    /// outside the partial index). Only rows this pull actually applied count as survivors.
+    private func tombstoneWishlistDuplicates(of remote: [RemoteWish], applied: Set<String>) throws {
+        let survivors = remote.filter { !$0.deleted && applied.contains($0.id) }
+        guard !survivors.isEmpty else { return }
+        let ctx = ModelContext(modelContainer)
+        let active = try WishlistItem.fetchActive(in: ctx)
+        let refs = active.map { SyncRules.RowRef(id: $0.id, setId: $0.setId, figNum: $0.figNum) }
+        var doomed = Set<String>()
+        for r in survivors {
+            doomed.formUnion(SyncRules.wishlistDuplicates(refs, keep: .init(id: r.id, setId: r.setId, figNum: r.figNum)))
+        }
+        guard !doomed.isEmpty else { return }
+        let now = Int64((Date().timeIntervalSince1970 * 1000).rounded())
+        for row in active where doomed.contains(row.id) {
+            row.tombstoned = true
+            row.updatedAt = now
+            row.dirty = true
+        }
+        try ctx.save()
     }
 }
 

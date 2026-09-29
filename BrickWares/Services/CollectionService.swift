@@ -15,6 +15,8 @@ final class SyncScheduler {
 
     @ObservationIgnored private let engine: SyncEngine
     @ObservationIgnored private var pending: Task<Void, Never>?
+    @ObservationIgnored private var retry: Task<Void, Never>?
+    @ObservationIgnored private var retryAttempt = 0
     private static let debounce: Duration = .milliseconds(750)
 
     init(container: ModelContainer) {
@@ -23,6 +25,7 @@ final class SyncScheduler {
 
     /// Requests a sync after a local write (no-op if signed out). Debounced.
     func requestSync() {
+        resetRetry() // a fresh request restarts the backoff schedule
         pending?.cancel()
         pending = Task { [weak self] in
             try? await Task.sleep(for: Self.debounce)
@@ -31,13 +34,14 @@ final class SyncScheduler {
         }
     }
 
-    /// Full push + pull **now**, bypassing the debounce; suspends until done. False when signed out
+    /// Full pull + push **now**, bypassing the debounce; suspends until done. False when signed out
     /// or the round-trip failed. Used by the CSV import to hold its blocking progress UI.
     @discardableResult
     func syncNow() async -> Bool {
         guard let uid = AuthService.shared.user?.id, AppConfig.isConfigured else { return false }
         isSyncing = true
         let ok = await engine.sync(uid: uid)
+        scheduleRetry(after: ok)
         await finish()
         return ok
     }
@@ -46,6 +50,7 @@ final class SyncScheduler {
     func handleSignedIn(_ user: AuthUser) async {
         isSyncing = true
         let result = await engine.onSignedIn(uid: user.id)
+        scheduleRetry(after: result.ok)
         if result.switched {
             AppSettings.shared.clearFavorites()
             CatalogOverlay.shared.reset()
@@ -56,11 +61,38 @@ final class SyncScheduler {
     /// Account deletion: drop every local row, the cursors, the account guard and the favorites.
     func wipeEverything() async {
         pending?.cancel()
+        resetRetry()
         await engine.wipeLocal()
         SyncStateStore().reset()
         AppSettings.shared.clearFavorites()
         CatalogOverlay.shared.reset()
         completedRevision += 1
+    }
+
+    /// A round that failed while the device believes it's online is retried on a short bounded backoff
+    /// (`SyncRules.retryDelays`, Android parity): the reconnect edge can fire a beat before the network
+    /// actually routes, and one failed attempt would strand dirty rows until the next write or foreground.
+    /// Offline, nothing is scheduled — the reconnect edge requests a sync instead.
+    private func scheduleRetry(after ok: Bool) {
+        if ok { resetRetry(); return }
+        guard retry == nil, retryAttempt < SyncRules.retryDelays.count, Connectivity.shared.isOnline else { return }
+        let delay = SyncRules.retryDelays[retryAttempt]
+        retryAttempt += 1
+        retry = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            // Release the handle BEFORE syncing: a failed retry schedules the next attempt from inside this
+            // task, and the `retry == nil` guard would otherwise see this task and stop.
+            self.retry = nil
+            guard Connectivity.shared.isOnline else { return }
+            await self.syncNow()
+        }
+    }
+
+    private func resetRetry() {
+        retry?.cancel()
+        retry = nil
+        retryAttempt = 0
     }
 
     private func finish() async {
@@ -115,19 +147,24 @@ final class CollectionService {
         let set = isFig ? nil : (overlay.set(id: item.setId, number: item.setNumber) ?? item)
         let now = nowMillis()
         let date = copy.date?.nilIfBlank
-        let qty = max(1, copy.qty)
+        // Clamp to the server's CHECK limits before anything goes dirty (see `UserDataLimits`).
+        let qty = UserDataLimits.capQty(copy.qty)
+        let paid = UserDataLimits.capPrice(copy.pricePaid)
+        let note = UserDataLimits.capNote(copy.note?.nilIfBlank)
 
         // A new copy identical in condition, currency, date, note and per-unit paid merges into the
         // existing row (bumps quantity, sums the total) instead of adding a duplicate. Per-unit match
-        // is cross-multiplied to avoid integer-division rounding.
+        // is cross-multiplied to avoid integer-division rounding. A merge that would pass the server's
+        // quantity or price cap is refused (a fresh row is added) rather than clamped.
         let existing = activeCopies(setNumber: item.setNumber, kind: kind)
         if let match = existing.first(where: {
             $0.condition == copy.condition.rawValue && $0.acquiredOn == date
-                && ($0.notes ?? "") == (copy.note ?? "") && $0.currency == copy.currency.rawValue
-                && $0.pricePaid * Int64(qty) == copy.pricePaid * Int64($0.quantity)
+                && ($0.notes ?? "") == (note ?? "") && $0.currency == copy.currency.rawValue
+                && $0.pricePaid * Int64(qty) == paid * Int64($0.quantity)
+                && Self.canMerge(existingQty: $0.quantity, addedQty: qty, prices: [($0.pricePaid, paid)])
         }) {
             match.quantity += qty
-            match.pricePaid += copy.pricePaid
+            match.pricePaid += paid
             touch(match, now)
         } else {
             context.insert(CollectionCopy(
@@ -140,13 +177,13 @@ final class CollectionService {
                 status: item.status.rawValue,
                 imageUrl: isFig ? item.imageUrl : (set?.thumbnailUrl ?? item.thumbnailUrl ?? item.imageUrl),
                 quantity: qty, condition: copy.condition.rawValue,
-                pricePaid: copy.pricePaid, currency: copy.currency.rawValue,
-                acquiredOn: date, notes: copy.note?.nilIfBlank,
+                pricePaid: paid, currency: copy.currency.rawValue,
+                acquiredOn: date, notes: note,
                 updatedAt: now, dirty: true
             ))
         }
         contributeLocal(setId: set?.setId, figNum: isFig ? item.setNumber : nil, setNumber: item.setNumber,
-                        amount: copy.pricePaid, currency: copy.currency, isSale: false)
+                        amount: paid, currency: copy.currency, isSale: false)
         // Owning an item removes it from the wishlist (want → have) — on EVERY add path.
         tombstoneWishlist(setNumber: item.setNumber, now)
         commit()
@@ -154,15 +191,15 @@ final class CollectionService {
 
     func updateCopy(id: String, _ copy: NewCopy) {
         guard let row = (try? CollectionCopy.fetch(ids: [id], in: context))?.first else { return }
-        row.quantity = max(1, copy.qty)
+        row.quantity = UserDataLimits.capQty(copy.qty)
         row.condition = copy.condition.rawValue
-        row.pricePaid = copy.pricePaid
+        row.pricePaid = UserDataLimits.capPrice(copy.pricePaid)
         row.currency = copy.currency.rawValue
         row.acquiredOn = copy.date?.nilIfBlank
-        row.notes = copy.note?.nilIfBlank
+        row.notes = UserDataLimits.capNote(copy.note?.nilIfBlank)
         touch(row, nowMillis())
         contributeLocal(setId: row.setId, figNum: row.figNum, setNumber: row.setNumber,
-                        amount: copy.pricePaid, currency: copy.currency, isSale: false)
+                        amount: row.pricePaid, currency: copy.currency, isSale: false)
         commit()
     }
 
@@ -194,15 +231,19 @@ final class CollectionService {
         let isFig = item.itemType == .minifig && item.setId == nil
         let set = isFig ? nil : (overlay.set(id: item.setId, number: item.setNumber) ?? item)
         let now = nowMillis()
-        let qty = max(1, qty)
+        let qty = UserDataLimits.capQty(qty)
+        let paid = UserDataLimits.capPrice(paid)
+        let salePrice = UserDataLimits.capPrice(salePrice)
         let soldOn = soldOn?.nilIfBlank
-        let note = note?.nilIfBlank
+        let note = UserDataLimits.capNote(note?.nilIfBlank)
 
         if let match = activeSales(setNumber: item.setNumber, kind: kind).first(where: {
             $0.condition == condition.rawValue && $0.soldOn == soldOn && ($0.notes ?? "") == (note ?? "")
                 && $0.currency == currency.rawValue
                 && $0.pricePaid * Int64(qty) == paid * Int64($0.quantity)
                 && $0.salePrice * Int64(qty) == salePrice * Int64($0.quantity)
+                && Self.canMerge(existingQty: $0.quantity, addedQty: qty,
+                                 prices: [($0.pricePaid, paid), ($0.salePrice, salePrice)])
         }) {
             match.quantity += qty
             match.pricePaid += paid
@@ -233,7 +274,9 @@ final class CollectionService {
         let available = copy.quantity
         let sellQty = min(max(1, quantity), max(1, available))
         let soldPaidCopyCcy = available <= 0 ? 0 : copy.pricePaid * Int64(sellQty) / Int64(available)
-        let soldPaid = CurrencyConverter.shared.convert(soldPaidCopyCcy, from: AppCurrency(wire: copy.currency), to: currency)
+        let soldPaid = UserDataLimits.capPrice(
+            CurrencyConverter.shared.convert(soldPaidCopyCcy, from: AppCurrency(wire: copy.currency), to: currency))
+        let salePrice = UserDataLimits.capPrice(salePrice)
         let now = nowMillis()
         let soldOn = soldOn?.nilIfBlank
 
@@ -242,6 +285,8 @@ final class CollectionService {
                 && $0.currency == currency.rawValue
                 && $0.pricePaid * Int64(sellQty) == soldPaid * Int64($0.quantity)
                 && $0.salePrice * Int64(sellQty) == salePrice * Int64($0.quantity)
+                && Self.canMerge(existingQty: $0.quantity, addedQty: sellQty,
+                                 prices: [($0.pricePaid, soldPaid), ($0.salePrice, salePrice)])
         }) {
             match.quantity += sellQty
             match.pricePaid += soldPaid
@@ -275,16 +320,16 @@ final class CollectionService {
         currency: AppCurrency, soldOn: String?, note: String?
     ) {
         guard let row = (try? Sale.fetch(ids: [id], in: context))?.first else { return }
-        row.quantity = max(1, quantity)
+        row.quantity = UserDataLimits.capQty(quantity)
         row.condition = condition.rawValue
-        row.pricePaid = paid
-        row.salePrice = salePrice
+        row.pricePaid = UserDataLimits.capPrice(paid)
+        row.salePrice = UserDataLimits.capPrice(salePrice)
         row.currency = currency.rawValue
         row.soldOn = soldOn?.nilIfBlank
-        row.notes = note?.nilIfBlank
+        row.notes = UserDataLimits.capNote(note?.nilIfBlank)
         touch(row, nowMillis())
         contributeLocal(setId: row.setId, figNum: row.figNum, setNumber: row.setNumber,
-                        amount: salePrice, currency: currency, isSale: true)
+                        amount: row.salePrice, currency: currency, isSale: true)
         commit()
     }
 
@@ -357,6 +402,18 @@ final class CollectionService {
 
         let now = nowMillis()
         let imported = CollectionCSV.rows(from: parsed, setIdByNumber: resolved, now: now)
+        // A hand-edited file can carry anything — clamp to the server's CHECK limits before it goes dirty.
+        for row in imported.copies {
+            row.quantity = UserDataLimits.capQty(row.quantity)
+            row.pricePaid = UserDataLimits.capPrice(row.pricePaid)
+            row.notes = UserDataLimits.capNote(row.notes)
+        }
+        for row in imported.sales {
+            row.quantity = UserDataLimits.capQty(row.quantity)
+            row.pricePaid = UserDataLimits.capPrice(row.pricePaid)
+            row.salePrice = UserDataLimits.capPrice(row.salePrice)
+            row.notes = UserDataLimits.capNote(row.notes)
+        }
 
         for row in (try? CollectionCopy.fetchActive(in: context)) ?? [] { tombstone(row, now) }
         for row in (try? Sale.fetchActive(in: context)) ?? [] { tombstone(row, now) }
@@ -370,6 +427,14 @@ final class CollectionService {
     }
 
     // MARK: Helpers
+
+    /// Whether merging `addedQty` units (and each `(existing, added)` price pair) into an existing row stays
+    /// within the server's caps. Past a cap the merge is refused and a fresh row is added instead —
+    /// clamping would keep the row valid but silently drop units or money.
+    private static func canMerge(existingQty: Int, addedQty: Int, prices: [(Int64, Int64)]) -> Bool {
+        UserDataLimits.canMergeQty(existing: existingQty, added: addedQty)
+            && prices.allSatisfy { $0.0 + $0.1 <= UserDataLimits.maxPriceMinor }
+    }
 
     private func activeCopies(setNumber: String, kind: String) -> [CollectionCopy] {
         (try? context.fetch(FetchDescriptor<CollectionCopy>(
