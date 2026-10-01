@@ -44,6 +44,13 @@ enum AppConfig {
     static let privacyURL = URL(string: "https://brickwares.app/privacy-policy")!
     static let termsURL = URL(string: "https://brickwares.app/terms-of-service")!
 
+    /// A hosted legal page in the language the app is showing. The pages are bilingual (EN/VI in one
+    /// document); `?lang=` opens the matching one and the site remembers it (Android `LegalLinks.open`).
+    static func localized(_ page: URL) -> URL {
+        let lang = Locale.current.language.languageCode?.identifier == "vi" ? "vi" : "en"
+        return page.appending(queryItems: [URLQueryItem(name: "lang", value: lang)])
+    }
+
     /// OAuth redirect for the Google web flow. Must be in Supabase → Auth → URL Configuration → Redirect URLs.
     static let oauthCallbackScheme = "brickwares"
     static let oauthRedirectURL = URL(string: "brickwares://auth-callback")!

@@ -14,11 +14,10 @@ ANDROID_RES = os.environ.get(
 )
 OUT = os.path.join(ROOT, "BrickWares", "Localizable.xcstrings")
 
-# key: (en, vi)
+# key: (en, vi). An entry here OVERRIDES an Android string of the same key — keep only what iOS
+# genuinely needs to word differently, and prefer a new iOS-only key over shadowing a shared one.
 IOS_ONLY = {
     "login_apple": ("Continue with Apple", "Tiếp tục với Apple"),
-    "login_forgot_password": ("Forgot password?", "Quên mật khẩu?"),
-    "login_reset_sent": ("If that email has an account, a reset link is on its way.", "Nếu email này có tài khoản, liên kết đặt lại đang được gửi đến."),
     "login_err_weak_password": ("That password is too weak. Try a longer one.", "Mật khẩu quá yếu. Hãy thử mật khẩu dài hơn."),
     "theme_system": ("System", "Hệ thống"),
     "settings_language_note": ("Change the app language in iOS Settings.", "Đổi ngôn ngữ ứng dụng trong Cài đặt iOS."),
@@ -32,7 +31,6 @@ IOS_ONLY = {
     "action_close": ("Close", "Đóng"),
     "action_edit": ("Edit", "Sửa"),
     "action_sell": ("Sell", "Bán"),
-    "action_remove": ("Remove", "Xoá"),
     "action_move_to_collection": ("Move to Collection", "Chuyển vào Bộ sưu tập"),
     "detail_minifigs_in_set": ("Minifigs in this set", "Minifig trong bộ này"),
     "minifig_exclusive": ("Exclusive", "Độc quyền"),
@@ -42,6 +40,7 @@ IOS_ONLY = {
     "search_suggestions_minifigs": ("Minifigs", "Minifig"),
     "pagination_page_of": ("Page %1$d of %2$d", "Trang %1$d / %2$d"),
     "sync_in_progress": ("Syncing…", "Đang đồng bộ…"),
+    "search_clear_cd": ("Clear search", "Xóa tìm kiếm"),
 }
 
 SPEC = re.compile(r"%(\d+\$)?([sd])")

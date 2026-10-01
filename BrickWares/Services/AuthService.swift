@@ -33,6 +33,10 @@ enum SignInResult: Equatable, Sendable {
     case passwordAlreadySet
     case weakPassword
     case tooManyRequests
+    /// The request never reached the server (offline, timeout) — "check your connection", not "something went wrong".
+    case networkError
+    /// `secure_password_change`: GoTrue refuses a password change on a session older than 24 h.
+    case reauthRequired
     case error(String)
 }
 
@@ -43,9 +47,16 @@ enum SignInResult: Equatable, Sendable {
 final class AuthService {
     static let shared = AuthService()
 
+    /// The server's `minimum_password_length` (Android `MIN_PASSWORD_LENGTH`). Applied to sign-up and
+    /// set-password ONLY — sign-in just needs a non-empty password, so an older, shorter one still gets in.
+    nonisolated static let minPasswordLength = 8
+
     private(set) var state: AuthState = .loading
     /// The on-demand login sheet trigger (Android's SignInController).
     var showLogin = false
+    /// Keeps the login sheet up across a sign-in (Android `SignInController.holdOpen`): verifying a
+    /// password-reset code SIGNS THE USER IN, but the "choose a new password" step still has to run.
+    @ObservationIgnored var holdLoginOpen = false
 
     /// Fired after a session appears (sign-in or cold-start restore) / disappears.
     @ObservationIgnored var onSignedIn: ((AuthUser) -> Void)?
@@ -92,7 +103,7 @@ final class AuthService {
         let wasSignedIn = self.user?.id == mapped.id
         if state != .signedIn(mapped) { state = .signedIn(mapped) }
         if !wasSignedIn {
-            if showLogin { showLogin = false }
+            if showLogin, !holdLoginOpen { showLogin = false }
             onSignedIn?(mapped)
         }
         if mapped.isSocialOnly { Task { await checkPasswordOnServer(userId: mapped.id) } }
@@ -156,8 +167,16 @@ final class AuthService {
         await attempt { try await self.client.auth.resend(email: email, type: .signup, captchaToken: captchaToken) }
     }
 
+    /// Forgot password, step 1: emails a 6-digit recovery code (the recovery template carries `{{ .Token }}`,
+    /// not a link). Succeeds whether or not the address has an account — the server never reveals which.
     func sendPasswordReset(email: String, captchaToken: String?) async -> SignInResult {
         await attempt { try await self.client.auth.resetPasswordForEmail(email, captchaToken: captchaToken) }
+    }
+
+    /// Forgot password, step 2: verify the recovery code. Success SIGNS THE USER IN on a fresh session, so
+    /// `setPassword` right after is never blocked by `secure_password_change`.
+    func verifyPasswordResetCode(email: String, code: String) async -> SignInResult {
+        await attempt { try await self.client.auth.verifyOTP(email: email, token: code, type: .recovery) }
     }
 
     /// Adds an email credential to a social-only account (or changes the password). Needs a live session.
@@ -257,8 +276,13 @@ final class AuthService {
 
     private static func mapError(_ error: Error) -> SignInResult {
         if error is CancellationError { return .cancelled }
+        // A transport failure (offline, timeout, DNS) is its own result, so the UI can say "check your
+        // connection" instead of the generic message.
+        if let url = error as? URLError { return url.code == .cancelled ? .cancelled : .networkError }
+        if (error as NSError).domain == NSURLErrorDomain { return .networkError }
         if let auth = error as? AuthError {
             switch auth.errorCode {
+            case .reauthenticationNeeded: return .reauthRequired
             case .emailNotConfirmed: return .emailNotConfirmed
             case .invalidCredentials: return .invalidCredentials
             case .captchaFailed: return .captchaFailed

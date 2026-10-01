@@ -78,8 +78,8 @@ struct SettingsView: View {
             }
 
             Section(L("settings_section_privacy")) {
-                Link(destination: AppConfig.privacyURL) { Label(L("settings_privacy_policy"), systemImage: "hand.raised") }
-                Link(destination: AppConfig.termsURL) { Label(L("settings_terms"), systemImage: "doc.text") }
+                Link(destination: AppConfig.localized(AppConfig.privacyURL)) { Label(L("settings_privacy_policy"), systemImage: "hand.raised") }
+                Link(destination: AppConfig.localized(AppConfig.termsURL)) { Label(L("settings_terms"), systemImage: "doc.text") }
             }
 
             Section(L("settings_section_about")) {
@@ -135,7 +135,7 @@ struct SettingsView: View {
             SecureField(L("login_password"), text: $newPassword)
             Button(L("action_save")) { savePassword() }
             Button(L("action_cancel"), role: .cancel) { newPassword = "" }
-        } message: { Text(L("set_password_body")) }
+        } message: { Text(L("set_password_body", AuthService.minPasswordLength)) }
         .alert(L("settings_notifications_blocked_title"), isPresented: $showNotificationsBlocked) {
             Button(L("settings_open_notification_settings")) { openAppSettings() }
             Button(L("action_cancel"), role: .cancel) {}
@@ -210,12 +210,16 @@ struct SettingsView: View {
     private func savePassword() {
         let password = newPassword
         newPassword = ""
-        guard password.count >= 6 else { router.showToast(L("login_err_password_short", 6)); return }
+        let min = AuthService.minPasswordLength
+        guard password.count >= min else { router.showToast(L("login_err_password_short", min)); return }
         Task {
             switch await auth.setPassword(password) {
             case .success: router.showToast(L("toast_password_set"))
             case .passwordAlreadySet: router.showToast(L("toast_password_already_set"))
             case .tooManyRequests: router.showToast(L("login_err_too_many"))
+            case .weakPassword: router.showToast(L("login_err_password_short", min))
+            // The server refuses a password change on a session older than 24 h (secure_password_change).
+            case .reauthRequired: router.showToast(L("toast_password_reauth"))
             default: router.showToast(L("toast_password_failed"))
             }
         }

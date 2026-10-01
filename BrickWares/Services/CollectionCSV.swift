@@ -18,8 +18,8 @@ enum CollectionCSV {
 
         var errorDescription: String? {
             switch self {
-            case .notABrickWaresExport: String(localized: "This file isn't a BrickWares export.")
-            case .tooNew: String(localized: "This file was made by a newer version of BrickWares. Update the app to import it.")
+            case .notABrickWaresExport: L("toast_import_failed")
+            case .tooNew: L("toast_import_too_new")
             }
         }
     }

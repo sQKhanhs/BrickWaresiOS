@@ -285,7 +285,7 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Xoá"
+            "value": "Xóa"
           }
         }
       }
@@ -1254,7 +1254,7 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Đăng nhập để lưu và đồng bộ bộ sưu tập của bạn"
+            "value": "Đăng nhập để đồng bộ và lưu bộ sưu tập"
           }
         }
       }
@@ -1548,6 +1548,23 @@
         }
       }
     },
+    "login_err_network": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't reach the server. Check your connection and try again."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không thể kết nối máy chủ. Kiểm tra kết nối và thử lại."
+          }
+        }
+      }
+    },
     "login_err_no_google": {
       "extractionState": "manual",
       "localizations": {
@@ -1578,6 +1595,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mật khẩu không khớp"
+          }
+        }
+      }
+    },
+    "login_err_password_required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your password"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhập mật khẩu của bạn"
           }
         }
       }
@@ -1718,6 +1752,23 @@
         }
       }
     },
+    "login_legal_acceptance": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By continuing, you agree to the %1$@ and %2$@."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Khi tiếp tục, bạn đồng ý với %1$@ và %2$@."
+          }
+        }
+      }
+    },
     "login_no_account": {
       "extractionState": "manual",
       "localizations": {
@@ -1786,6 +1837,23 @@
         }
       }
     },
+    "login_password_new": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password (at least %1$lld characters)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mật khẩu (ít nhất %1$lld ký tự)"
+          }
+        }
+      }
+    },
     "login_resend_code": {
       "extractionState": "manual",
       "localizations": {
@@ -1837,19 +1905,121 @@
         }
       }
     },
+    "login_reset_body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your account email and we'll send you a 6-digit code."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhập email tài khoản của bạn, chúng tôi sẽ gửi mã 6 số."
+          }
+        }
+      }
+    },
+    "login_reset_done": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password updated. You're signed in."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã cập nhật mật khẩu. Bạn đã đăng nhập."
+          }
+        }
+      }
+    },
+    "login_reset_new_body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code confirmed. Choose a new password."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mã hợp lệ. Hãy chọn mật khẩu mới."
+          }
+        }
+      }
+    },
+    "login_reset_save": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save new password"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lưu mật khẩu mới"
+          }
+        }
+      }
+    },
+    "login_reset_send": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send code"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gửi mã"
+          }
+        }
+      }
+    },
     "login_reset_sent": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "If that email has an account, a reset link is on its way."
+            "value": "If %1$@ has a BrickWares account, a 6-digit code is on its way. Enter it below."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nếu email này có tài khoản, liên kết đặt lại đang được gửi đến."
+            "value": "Nếu %1$@ có tài khoản BrickWares, mã 6 số đang được gửi đến. Nhập mã bên dưới."
+          }
+        }
+      }
+    },
+    "login_reset_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset your password"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đặt lại mật khẩu"
           }
         }
       }
@@ -2274,7 +2444,7 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thông báo khi một món trong danh sách mong muốn chuyển sang ngừng bán"
+            "value": "Thông báo khi một bộ trong danh sách mong muốn chuyển sang ngừng bán"
           }
         }
       }
@@ -2291,7 +2461,7 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Có %1$lld món trong danh sách mong muốn của bạn đã ngừng bán. Mở ứng dụng để xem chi tiết."
+            "value": "Có %1$lld bộ trong danh sách mong muốn của bạn đã ngừng bán. Mở ứng dụng để xem chi tiết."
           }
         }
       }
@@ -2325,7 +2495,7 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Món mong muốn đã ngừng bán"
+            "value": "Bộ mong muốn đã ngừng bán"
           }
         }
       }
@@ -2840,6 +3010,23 @@
         }
       }
     },
+    "search_clear_cd": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear search"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xóa tìm kiếm"
+          }
+        }
+      }
+    },
     "search_mark_favorite_cd": {
       "extractionState": "manual",
       "localizations": {
@@ -3044,6 +3231,23 @@
         }
       }
     },
+    "search_searching": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang tìm…"
+          }
+        }
+      }
+    },
     "search_sort_label": {
       "extractionState": "manual",
       "localizations": {
@@ -3057,6 +3261,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sắp xếp"
+          }
+        }
+      }
+    },
+    "search_suggest_error": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't load results. Check your internet connection."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không tải được kết quả. Hãy kiểm tra kết nối mạng."
           }
         }
       }
@@ -3345,7 +3566,7 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bán món đồ"
+            "value": "Bán bộ"
           }
         }
       }
@@ -3356,13 +3577,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Add a password so you can also sign in with your email — not just Google."
+            "value": "Add a password so you can also sign in with your email — not just Google. Use at least %1$lld characters."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thêm mật khẩu để bạn có thể đăng nhập bằng email, không chỉ bằng Google."
+            "value": "Thêm mật khẩu để bạn có thể đăng nhập bằng email, không chỉ bằng Google. Dùng ít nhất %1$lld ký tự."
           }
         }
       }
@@ -3390,13 +3611,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Catalog data from Brickset and Rebrickable. LEGO® is a trademark of the LEGO Group, which does not sponsor or endorse this app."
+            "value": "Catalog data from Brickset and Rebrickable. Images from Rebrickable and BrickLink. LEGO® is a trademark of the LEGO Group, which does not sponsor or endorse this app."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dữ liệu danh mục từ Brickset và Rebrickable. LEGO® là thương hiệu của Tập đoàn LEGO, đơn vị không tài trợ hay xác nhận ứng dụng này."
+            "value": "Dữ liệu danh mục từ Brickset và Rebrickable. Hình ảnh từ Rebrickable và BrickLink. LEGO® là thương hiệu của Tập đoàn LEGO, đơn vị không tài trợ hay xác nhận ứng dụng này."
           }
         }
       }
@@ -3872,7 +4093,7 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nhận thông báo khi một món trong danh sách mong muốn ngừng bán"
+            "value": "Nhận thông báo khi một bộ trong danh sách mong muốn ngừng bán"
           }
         }
       }
@@ -4138,13 +4359,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Version · v0.1.0 (preview)"
+            "value": "Version %1$@"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Phiên bản · v0.1.0 (bản xem trước)"
+            "value": "Phiên bản %1$@"
           }
         }
       }
@@ -5430,13 +5651,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't set the password. Please try again."
+            "value": "Couldn't set the password. Check your connection and try again."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Không thể đặt mật khẩu. Vui lòng thử lại."
+            "value": "Không thể đặt mật khẩu. Kiểm tra kết nối và thử lại."
+          }
+        }
+      }
+    },
+    "toast_password_reauth": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For your security, sign out and sign in again, then set your password."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Để bảo mật, hãy đăng xuất rồi đăng nhập lại, sau đó đặt mật khẩu."
           }
         }
       }
@@ -5714,6 +5952,40 @@
       }
     },
     "wishlist_remove_cd": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from wishlist"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xóa khỏi danh sách mong muốn"
+          }
+        }
+      }
+    },
+    "wishlist_remove_confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove \"%1$@\" from your wishlist?"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xóa \"%1$@\" khỏi danh sách mong muốn của bạn?"
+          }
+        }
+      }
+    },
+    "wishlist_remove_title": {
       "extractionState": "manual",
       "localizations": {
         "en": {
