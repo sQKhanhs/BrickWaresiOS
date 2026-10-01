@@ -155,8 +155,9 @@ struct ItemDetailsSheet: View {
             Button(role: .destructive) { collection.removeCopy(id: copy.id) } label: {
                 Label(L("action_delete"), systemImage: "trash")
             }
-            // Minifigs aren't sold through the per-copy flow (matches Android's allowSell = false).
-            if !isFig {
+            // Minifigs aren't sold through the per-copy flow (matches Android's allowSell = false), and an
+            // empty (0-quantity) copy has nothing to sell.
+            if !isFig, copy.qty > 0 {
                 Button { sellTarget = copy } label: { Label(L("action_sell"), systemImage: "dollarsign.circle") }
                     .tint(Bw.success)
             }
@@ -171,7 +172,7 @@ struct ItemDetailsSheet: View {
             Button { addRequest = AddSheetRequest(item: request.item, mode: .editCopy(copy)) } label: {
                 Label(L("sd_edit_copy_cd"), systemImage: "pencil")
             }
-            if !isFig {
+            if !isFig, copy.qty > 0 {
                 Button { sellTarget = copy } label: { Label(L("sd_sell_copy_cd"), systemImage: "dollarsign.circle") }
             }
             Button(role: .destructive) { collection.removeCopy(id: copy.id) } label: {
@@ -303,6 +304,11 @@ struct ImageGallery: View {
     @State private var failed = Set<String>()
     @State private var selection: String?
 
+    init(urls: [String], start: String? = nil) {
+        self.urls = urls
+        _selection = State(initialValue: start.flatMap { urls.contains($0) ? $0 : nil })
+    }
+
     private var visible: [String] { urls.filter { !failed.contains($0) } }
 
     var body: some View {
@@ -331,4 +337,6 @@ struct ImageGallery: View {
 struct GalleryRequest: Identifiable {
     let id = UUID()
     var urls: [String]
+    /// The image to open at; nil = the first.
+    var start: String?
 }

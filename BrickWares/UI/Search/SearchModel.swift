@@ -56,13 +56,21 @@ final class SearchModel {
 
     private(set) var setThemes: [ThemeGroup] = []
     private(set) var minifigThemes: [ThemeGroup] = []
-    private(set) var browsePhase: LoadPhase = .loading
+    /// One phase PER mode. A single shared phase left the already-loaded Sets list on the error page after
+    /// a failed minifig load, and flashed the other mode's "empty" state when switching mid-load.
+    private var browsePhases: [SearchMode: LoadPhase] = [:]
+    var browsePhase: LoadPhase { browsePhases[mode] ?? .loading }
     /// Display order, **frozen** at browse entry / sort / mode change — favoriting a theme must not
     /// reorder the list under the user's finger.
     private(set) var orderedThemeNames: [String] = []
 
     private(set) var setSuggestions: [CatalogSet] = []
     private(set) var minifigSuggestions: [Minifig] = []
+    /// The suggestion lookup for the CURRENT query: `.pending` from the first keystroke (through the
+    /// debounce and the round trip), `.failed` when both fetches errored. Without it an empty list read as
+    /// "No matches" the whole time the user was typing, and a failed fetch said the same (Android ee0ee66).
+    enum SuggestState { case idle, pending, failed }
+    private(set) var suggestState: SuggestState = .idle
     private(set) var setResults: [CatalogSet] = []
     private(set) var minifigResults: [Minifig] = []
     private(set) var resultsPhase: LoadPhase = .loaded
@@ -92,10 +100,11 @@ final class SearchModel {
     // MARK: Browse
 
     func loadBrowse(force: Bool = false) async {
-        guard force || themes.isEmpty else { return }
-        browsePhase = .loading
+        let loading = mode // the mode this load is FOR — the user may switch while it runs
+        guard force || (loading == .sets ? setThemes : minifigThemes).isEmpty else { return }
+        browsePhases[loading] = .loading
         do {
-            if mode == .sets {
+            if loading == .sets {
                 async let counts = catalog.themeCounts()
                 async let subs = catalog.subthemeCounts()
                 setThemes = Self.group(try await counts, try await subs)
@@ -104,23 +113,25 @@ final class SearchModel {
                 async let subs = catalog.minifigSubthemeCounts()
                 minifigThemes = Self.group(try await counts, try await subs)
             }
-            browsePhase = .loaded
-            freezeOrder()
-            if mode == .sets {
+            browsePhases[loading] = .loaded
+            if mode == loading { freezeOrder() } // else `modeChanged` freezes it when the user switches back
+            if loading == .sets {
                 await ImageLoader.shared.prefetch(setThemes.compactMap { CatalogImages.themeIconUrl($0.theme) })
             }
         } catch {
-            browsePhase = .failed
+            browsePhases[loading] = .failed
         }
     }
 
     private static func group(_ counts: [ThemeCount], _ subs: [ThemeSubthemeCount]) -> [ThemeGroup] {
         let subsByTheme = Dictionary(grouping: subs, by: \.theme)
         return counts.filter { !$0.theme.isEmpty }.map { c in
-            ThemeGroup(
+            let subs = (subsByTheme[c.theme] ?? []).filter { !$0.subtheme.isEmpty }
+            // A theme whose ONLY subtheme is the no-subtheme bucket gets no chip: it would just be the theme.
+            let lone = subs.count == 1 && subs[0].subtheme == CatalogRepository.noSubtheme
+            return ThemeGroup(
                 theme: c.theme, count: c.count,
-                subthemes: (subsByTheme[c.theme] ?? [])
-                    .filter { !$0.subtheme.isEmpty }
+                subthemes: (lone ? [] : subs)
                     .sorted { $0.subtheme.lowercased() < $1.subtheme.lowercased() }
                     .map { .init(name: $0.subtheme, count: $0.count) }
             )
@@ -167,8 +178,10 @@ final class SearchModel {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else {
             setSuggestions = []; minifigSuggestions = []
+            suggestState = .idle
             return
         }
+        suggestState = .pending // the previous query's suggestions stay up meanwhile
         searchTask = Task { [catalog] in
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
@@ -177,8 +190,12 @@ final class SearchModel {
             let (s, f) = await (sets, figs)
             // A newer keystroke superseded this lookup — drop the stale result.
             guard !Task.isCancelled else { return }
+            // Both failing is a connection problem, not "no matches" — keep what was showing. One failing
+            // still shows the other.
+            guard s != nil || f != nil else { suggestState = .failed; return }
             setSuggestions = s ?? []
             minifigSuggestions = f ?? []
+            suggestState = .idle
         }
     }
 

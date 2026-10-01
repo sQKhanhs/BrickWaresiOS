@@ -70,6 +70,10 @@ struct HomeView: View {
             ShareCollectionSheet(items: items, summary: summary, themes: themes, memberName: auth.user?.displayName)
         }
         .task { if newSets.isEmpty { await loadNewSets() } }
+        // Opened offline and still on Home: load the card when the connection returns (Android 977b822).
+        .onChange(of: Connectivity.shared.isOnline) { _, online in
+            if online, newSets.isEmpty { Task { await loadNewSets() } }
+        }
         .refreshable { await loadNewSets() }
     }
 

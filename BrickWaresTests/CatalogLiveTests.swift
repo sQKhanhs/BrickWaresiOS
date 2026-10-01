@@ -42,6 +42,17 @@ struct CatalogLiveTests {
         #expect(appears.contains { $0.setNumber == "75192" })
     }
 
+    @Test func subthemeChipsAreNormalizedAndBooksHaveCovers() async throws {
+        // No blank chip (it could never match the theme page's "General" filter), one row per (theme, subtheme).
+        let subs = try await catalog.subthemeCounts()
+        #expect(!subs.contains { $0.subtheme.isEmpty })
+        #expect(Set(subs.map { "\($0.theme)\u{1F}\($0.subtheme)" }).count == subs.count)
+        #expect(subs.contains { $0.subtheme == CatalogRepository.noSubtheme })
+        // A Books item has no stored render, so its image URL is built from the number — without "isbn".
+        let book = try #require(try await catalog.fetchSet("ISBN9781593278199"))
+        #expect(book.imageUrl?.lowercased().contains("isbn") == false)
+    }
+
     @Test func minifigThemeBrowse() async throws {
         _ = try await catalog.minifigsInTheme("Architecture") // may be empty; must not throw (!inner embedded filter)
         #expect(try await catalog.minifigThemeCounts().count > 50)

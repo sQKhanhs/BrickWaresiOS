@@ -97,7 +97,20 @@ struct SearchView: View {
         let sets = model.setSuggestions
         let figs = model.minifigSuggestions
         if sets.isEmpty, figs.isEmpty {
-            Text(L("search_no_matches", model.query)).font(.subheadline).foregroundStyle(Bw.textMuted).padding(.top, 30)
+            // "No matches" only once a lookup for THIS query has actually come back empty.
+            switch model.suggestState {
+            case .pending:
+                HStack(spacing: 8) {
+                    ProgressView().tint(Bw.yellow)
+                    Text(L("search_searching")).font(.subheadline).foregroundStyle(Bw.textMuted)
+                }
+                .padding(.top, 30)
+            case .failed:
+                Text(L("search_suggest_error")).font(.subheadline).foregroundStyle(Bw.textMuted)
+                    .multilineTextAlignment(.center).padding(.top, 30)
+            case .idle:
+                Text(L("search_no_matches", model.query)).font(.subheadline).foregroundStyle(Bw.textMuted).padding(.top, 30)
+            }
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 if !sets.isEmpty {
@@ -194,7 +207,7 @@ private struct SearchField: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Bw.textFaint)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text(verbatim: "Clear"))
+                .accessibilityLabel(L("search_clear_cd"))
             }
         }
         .padding(.horizontal, 12).frame(height: 44)

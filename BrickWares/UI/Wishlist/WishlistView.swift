@@ -14,6 +14,9 @@ struct WishlistView: View {
 
     @State private var filter: ItemFilter = .all
     @State private var sort: ItemSort = .dateAdded
+    /// The row awaiting a remove confirmation — a row id, resolved from the live list, so the dialog
+    /// closes itself if the row goes away meanwhile (a sync, or the item being added to the collection).
+    @State private var pendingRemovalId: String?
 
     private var entries: [WishlistEntry] {
         let _ = (overlay.revision, values.revision, settings.ratesRevision)
@@ -48,10 +51,11 @@ struct WishlistView: View {
                         ) { router.go(to: .search) }
                     } else {
                         ForEach(visible) { entry in
-                            WishlistCard(entry: entry)
-                                // Removing a want is low-stakes (and re-addable), so no confirm — same as Android.
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) { remove(entry) } label: {
+                            WishlistCard(entry: entry) { pendingRemovalId = entry.rowId }
+                                // Both removal paths (this swipe and the card's heart) confirm first, like
+                                // Collection and Sales (Android f1a1e0c).
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) { pendingRemovalId = entry.rowId } label: {
                                         Label(L("wishlist_remove_cd"), systemImage: "heart.slash")
                                     }
                                 }
@@ -77,9 +81,24 @@ struct WishlistView: View {
             }
         }
         .itemSheets()
+        .confirmationDialog(
+            L("wishlist_remove_title"),
+            isPresented: Binding(get: { pendingRemoval(in: entries) != nil }, set: { if !$0 { pendingRemovalId = nil } }),
+            titleVisibility: .visible, presenting: pendingRemoval(in: entries)
+        ) { entry in
+            Button(L("action_remove"), role: .destructive) { remove(entry) }
+            Button(L("action_cancel"), role: .cancel) {}
+        } message: { entry in
+            Text(L("wishlist_remove_confirm", entry.name))
+        }
+    }
+
+    private func pendingRemoval(in entries: [WishlistEntry]) -> WishlistEntry? {
+        pendingRemovalId.flatMap { id in entries.first { $0.rowId == id } }
     }
 
     private func remove(_ entry: WishlistEntry) {
+        pendingRemovalId = nil
         collection.removeFromWishlist(setNumber: entry.setNumber, setId: entry.setId)
         router.showToast(L("toast_removed_wishlist", entry.name))
     }
@@ -99,6 +118,8 @@ struct WishlistView: View {
 
 private struct WishlistCard: View {
     let entry: WishlistEntry
+    /// Asks to remove this entry (the screen confirms first).
+    let onRemove: () -> Void
 
     @Environment(AppSettings.self) private var settings
     @Environment(AppRouter.self) private var router
@@ -145,7 +166,9 @@ private struct WishlistCard: View {
                     Label(L("action_add"), systemImage: "plus")
                 }
                 .buttonStyle(.bwPrimaryCompact)
-                WishlistButton(item: CatalogSet(entry), isWishlisted: true)
+                // Same look as the shared heart, but in this tab removing asks first.
+                Button(action: onRemove) { Label(L("action_wishlisted"), systemImage: "heart.fill") }
+                    .buttonStyle(BwSecondaryButtonStyle(compact: true, tint: Color(hex: 0xC9506F)))
             }
         }
         .bwCard()

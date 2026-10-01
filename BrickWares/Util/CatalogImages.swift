@@ -5,19 +5,28 @@ import Foundation
 /// The set number is **lowercased**: both CDNs are case-sensitive and store alphanumeric set numbers
 /// ("COMCON022", "DC1") in lowercase, while Brickset gives them uppercase.
 enum CatalogImages {
-    /// BrickLink "original box" packaging photo. Some sets (polybags/promos) have none → 404.
+    /// The image-CDN slug for a set number: lowercased, with a leading "isbn" stripped. Books-theme items
+    /// carry a Brickset number like "ISBN9780241788080", but both CDNs host the cover under the BARE ISBN
+    /// ("9780241788080-1"), so the raw number 404s — and none of the ~400 books has a stored render URL to
+    /// fall back on. Numeric / alphanumeric numbers ("10196", "COMCON022") are unaffected.
+    static func imageSlug(_ setNumber: String) -> String {
+        let lowered = setNumber.lowercased()
+        return lowered.hasPrefix("isbn") ? String(lowered.dropFirst(4)) : lowered
+    }
+
+    /// BrickLink "original box" packaging photo. Some sets (polybags/promos/books) have none → 404.
     static func boxUrl(_ setNumber: String, variant: Int = 1) -> String {
-        "https://img.bricklink.com/ItemImage/ON/0/\(setNumber.lowercased())-\(variant).png"
+        "https://img.bricklink.com/ItemImage/ON/0/\(imageSlug(setNumber))-\(variant).png"
     }
 
     /// Rebrickable studio render of the built set (full resolution — can be several MB).
     static func renderUrl(_ setNumber: String, variant: Int = 1) -> String {
-        "https://cdn.rebrickable.com/media/sets/\(setNumber.lowercased())-\(variant).jpg"
+        "https://cdn.rebrickable.com/media/sets/\(imageSlug(setNumber))-\(variant).jpg"
     }
 
     /// Rebrickable's server-resized, square-padded thumbnail (~10–150 KB) for list cards.
     static func thumbUrl(_ setNumber: String, variant: Int = 1, size: Int = 320) -> String {
-        "https://cdn.rebrickable.com/media/thumbs/sets/\(setNumber.lowercased())-\(variant).jpg/\(size)x\(size)p.jpg"
+        "https://cdn.rebrickable.com/media/thumbs/sets/\(imageSlug(setNumber))-\(variant).jpg/\(size)x\(size)p.jpg"
     }
 
     /// The full-resolution render for a stored thumb — same set + **variant**. User rows persist the

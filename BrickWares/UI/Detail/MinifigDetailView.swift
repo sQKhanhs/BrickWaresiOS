@@ -96,13 +96,11 @@ private struct MinifigContent: View {
         let currency = settings.currency
         VStack(spacing: 16) {
             VStack(spacing: 14) {
-                Button { sheets.showGallery([fig.imageUrl].compactMap { $0 }) } label: {
-                    RemoteImage([fig.imageUrl], maxPointSize: 320)
-                        .frame(maxWidth: .infinity).frame(height: 230)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: Bw.cardRadius, style: .continuous))
-                        .clipShape(RoundedRectangle(cornerRadius: Bw.cardRadius, style: .continuous))
+                // The shared hero: opens the gallery only once the image has actually loaded (a failed
+                // image used to open a gallery that closed itself at once).
+                HeroImageGallery(urls: [fig.imageUrl].compactMap { $0?.nilIfBlank }, height: 230, maxPointSize: 320) { loaded, index in
+                    sheets.showGallery(loaded, startingAt: loaded[index])
                 }
-                .buttonStyle(.plain)
                 Text(fig.name).font(.title3.weight(.bold)).multilineTextAlignment(.center)
                 HStack(spacing: 10) {
                     if ownership.isOwnedOrSold(asSet) {

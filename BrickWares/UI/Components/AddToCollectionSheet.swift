@@ -77,7 +77,7 @@ struct AddToCollectionSheet: View {
     }
 
     private var canSubmit: Bool {
-        selected != nil && !paid.isEmpty && (!salesMode || !salePrice.isEmpty)
+        selected != nil && !paid.isEmpty && (!salesMode || !salePrice.isEmpty) && (Int(qty) ?? 0) >= 1
     }
 
     var body: some View {

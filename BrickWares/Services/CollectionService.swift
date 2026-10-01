@@ -277,7 +277,14 @@ final class CollectionService {
     func sellCopy(id: String, quantity: Int, salePrice: Int64, currency: AppCurrency, soldOn: String?) {
         guard let copy = (try? CollectionCopy.fetch(ids: [id], in: context))?.first else { return }
         let available = copy.quantity
-        let sellQty = min(max(1, quantity), max(1, available))
+        // Nothing to sell (a legacy 0-quantity copy — the server's CHECK allows 0, so one can arrive by
+        // sync): recording it would invent a 1-unit sale at zero cost. Tombstone the empty row instead.
+        guard available > 0 else {
+            tombstone(copy, nowMillis())
+            commit()
+            return
+        }
+        let sellQty = min(max(1, quantity), available)
         let soldPaidCopyCcy = available <= 0 ? 0 : copy.pricePaid * Int64(sellQty) / Int64(available)
         let soldPaid = UserDataLimits.capPrice(
             CurrencyConverter.shared.convert(soldPaidCopyCcy, from: AppCurrency(wire: copy.currency), to: currency))

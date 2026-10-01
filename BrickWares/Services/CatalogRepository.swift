@@ -44,7 +44,7 @@ final class CatalogRepository: Sendable {
                 .limit(limit)
                 .execute().value
         }
-        return Self.revealed(rows).uniqued(by: \.id)
+        return Self.listable(Self.revealed(rows))
     }
 
     @concurrent
@@ -59,7 +59,44 @@ final class CatalogRepository: Sendable {
         let rows: [SubthemeCountRow] = try await allPages {
             $0.from("catalog_subtheme_counts").select().order("theme").order("subtheme")
         }
-        return rows.map { ThemeSubthemeCount(theme: $0.theme, subtheme: $0.subtheme, count: $0.setCount) }
+        // The view coalesces a null subtheme to "" but `toCatalogSet` labels those sets "General", so a ""
+        // chip could never match the theme page's filter. Normalize "" → "General" and merge it with any
+        // explicit "General" row, so the chip's count and filter agree with the list it opens.
+        var order: [String] = []
+        var merged: [String: ThemeSubthemeCount] = [:]
+        for row in rows {
+            let subtheme = row.subtheme.nilIfBlank ?? Self.noSubtheme
+            let key = "\(row.theme)\u{1F}\(subtheme)"
+            if var existing = merged[key] {
+                existing.count += row.setCount
+                merged[key] = existing
+            } else {
+                order.append(key)
+                merged[key] = ThemeSubthemeCount(theme: row.theme, subtheme: subtheme, count: row.setCount)
+            }
+        }
+        return order.compactMap { merged[$0] }
+    }
+
+    /// The label for a set with no subtheme — must stay in step with `SetRow.toCatalogSet`.
+    static let noSubtheme = "General"
+
+    /// One row per catalog item for a list: unique by id (number + variant), then content-identical rows
+    /// that share a number and differ ONLY by variant collapsed to the lowest variant (a Brickset
+    /// magazine-gift quirk — two "212504 Superman"). Legitimate shared-number variants (CMF series, SDCC
+    /// exclusives) differ in name / pieces and are untouched. Order preserved. Android `dedupeDuplicateVariants`.
+    static func listable(_ sets: [CatalogSet]) -> [CatalogSet] {
+        func contentKey(_ s: CatalogSet) -> String {
+            "\(s.setNumber)\u{1F}\(s.name)\u{1F}\(s.releaseYear)\u{1F}\(s.pieces)\u{1F}\(s.minifigs)"
+        }
+        let byId = sets.uniqued(by: \.id)
+        var lowest: [String: Int] = [:]
+        for s in byId { lowest[contentKey(s)] = min(lowest[contentKey(s)] ?? s.numberVariant, s.numberVariant) }
+        var emitted = Set<String>()
+        return byId.filter { s in
+            let key = contentKey(s)
+            return s.numberVariant == lowest[key] && emitted.insert(key).inserted
+        }
     }
 
     /// All sets of one theme (bounded ~1–2k); the caller filters subthemes / sorts / paginates in memory.
@@ -72,7 +109,7 @@ final class CatalogRepository: Sendable {
                 .neq("name", value: Self.unrevealedName)
                 .order("set_id")
         }
-        return Self.revealed(rows).uniqued(by: \.id)
+        return Self.listable(Self.revealed(rows))
     }
 
     /// A bounded slice of a theme (its most recent sets) — the pool the detail page draws its random
@@ -88,7 +125,7 @@ final class CatalogRepository: Sendable {
                 .limit(limit)
                 .execute().value
         }
-        return Self.revealed(rows).uniqued(by: \.id)
+        return Self.listable(Self.revealed(rows))
     }
 
     /// `catalogKey` is `CatalogSet.id` ("<number>-<variant>"), a bare number, or "sid:<set_id>" (an
@@ -197,7 +234,7 @@ final class CatalogRepository: Sendable {
                 .neq("name", value: Self.unrevealedName)
                 .execute().value
         }
-        return Self.revealed(rows).uniqued(by: \.id)
+        return Self.listable(Self.revealed(rows))
     }
 
     // MARK: Minifigs
@@ -276,7 +313,7 @@ final class CatalogRepository: Sendable {
         let rows: [SetWrapperRow] = try await run {
             try await $0.from("set_minifigs").select("sets(\(Self.setCols))").eq("fig_num", value: figNum).execute().value
         }
-        return Self.revealed(rows.compactMap(\.sets)).uniqued(by: \.id).sorted { $0.releaseYear > $1.releaseYear }
+        return Self.listable(Self.revealed(rows.compactMap(\.sets))).sorted { $0.releaseYear > $1.releaseYear }
     }
 
     /// Figs in a set. The grid needs only identity/image, so the theme join is skipped.
@@ -468,7 +505,7 @@ private struct SetRow: Decodable, Sendable {
             status: deriveStatus(today: today),
             retiredYear: retiredPast?.year ?? 0,
             retiredMonth: retiredPast?.month ?? 0,
-            subtheme: subtheme ?? "General",
+            subtheme: subtheme?.nilIfBlank ?? CatalogRepository.noSubtheme,
             // Prefer the ingest-captured authoritative render (correct for multi-variant numbers).
             imageUrl: render ?? CatalogImages.renderUrl(setNumber, variant: variant),
             boxImageUrl: boxImageUrl?.nilIfBlank,

@@ -43,9 +43,10 @@ final class ItemSheetCoordinator {
         detailsRequest = ItemDetailsRequest(item: item, initialTab: tab)
     }
 
-    func showGallery(_ urls: [String]) {
+    /// `start` opens the gallery at that image (the one the hero was showing) instead of the first.
+    func showGallery(_ urls: [String], startingAt start: String? = nil) {
         guard !urls.isEmpty else { return }
-        gallery = GalleryRequest(urls: urls)
+        gallery = GalleryRequest(urls: urls, start: start)
     }
 }
 
@@ -62,7 +63,7 @@ private struct ItemSheetsModifier: ViewModifier {
                 }
             }
             .sheet(item: $coordinator.detailsRequest) { ItemDetailsSheet(request: $0) }
-            .fullScreenCover(item: $coordinator.gallery) { ImageGallery(urls: $0.urls) }
+            .fullScreenCover(item: $coordinator.gallery) { ImageGallery(urls: $0.urls, start: $0.start) }
     }
 }
 
@@ -163,7 +164,8 @@ struct WishlistButton: View {
     }
 }
 
-/// "Label value" meta line; the value stays on one line.
+/// "Label value" meta line; a long value (a theme, or a minifig's joined themes) wraps to a second line
+/// instead of being cut off with "…".
 struct MetaLine: View {
     let label: String
     let value: String
@@ -176,7 +178,8 @@ struct MetaLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(label).font(.caption2).foregroundStyle(Bw.textMuted)
-            Text(value.isEmpty ? "—" : value).font(.caption2.weight(.semibold)).foregroundStyle(Bw.textSecondary).lineLimit(1)
+            Text(value.isEmpty ? "—" : value).font(.caption2.weight(.semibold)).foregroundStyle(Bw.textSecondary)
+                .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

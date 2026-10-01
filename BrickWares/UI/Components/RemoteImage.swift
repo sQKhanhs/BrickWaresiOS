@@ -223,6 +223,15 @@ extension CatalogSet {
     var galleryUrls: [String] {
         [imageUrl, boxImageUrl].compactMap { $0?.nilIfBlank }.uniqued(by: \.self)
     }
+
+    /// Detail-hero candidates: the render, then the box shot — the re-hosted one, else BrickLink's packaging
+    /// photo (Android does the same). That fallback is for ONE detail page only, never list cards: it 404s
+    /// for many sets and rate-limits a burst. `HeroImageGallery` probes and drops whatever doesn't load.
+    var heroUrls: [String] {
+        guard itemType != .minifig else { return [imageUrl].compactMap { $0?.nilIfBlank } }
+        let box = boxImageUrl?.nilIfBlank ?? CatalogImages.boxUrl(setNumber, variant: numberVariant)
+        return [imageUrl, box].compactMap { $0?.nilIfBlank }.uniqued(by: \.self)
+    }
 }
 
 /// Card/galleries for persisted rows, which store only the thumb (see CatalogImages.renderFromThumb).

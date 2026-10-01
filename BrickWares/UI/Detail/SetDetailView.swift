@@ -20,7 +20,6 @@ struct SetDetailView: View {
     @State private var related: [CatalogSet] = []
     @State private var currentValue: CurrentValue?
     @State private var valueLoading = true
-    @State private var heroLoaded = false
 
     init(catalogKey: String) {
         self.catalogKey = catalogKey
@@ -79,7 +78,7 @@ struct SetDetailView: View {
 
     @ViewBuilder private func content(_ set: CatalogSet) -> some View {
         VStack(spacing: 16) {
-            Hero(set: set, heroLoaded: $heroLoaded)
+            Hero(set: set)
             detailsCard(set)
             pricingCard(set)
             if !minifigs.isEmpty { minifigGrid }
@@ -131,7 +130,9 @@ struct SetDetailView: View {
                     .font(.subheadline.weight(.bold))
             }
             if let note {
-                Text(note).font(.footnote).italic().foregroundStyle(Bw.textMuted2).padding(.bottom, 8)
+                // Notes can carry <a>/<br> markup; render links and breaks instead of the raw tags.
+                Text(NoteMarkup.attributed(note)).font(.footnote).italic().foregroundStyle(Bw.textMuted2)
+                    .tint(Bw.link).padding(.bottom, 8)
             }
             Divider()
             DetailRow(label: L("current_value")) {
@@ -226,7 +227,6 @@ struct SetDetailView: View {
 
 private struct Hero: View {
     let set: CatalogSet
-    @Binding var heroLoaded: Bool
 
     @Environment(AuthService.self) private var auth
     @Environment(OwnershipIndex.self) private var ownership
@@ -234,16 +234,11 @@ private struct Hero: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Button {
-                // Inert while only the "No image" placeholder is showing.
-                if heroLoaded { sheets.showGallery(set.galleryUrls) }
-            } label: {
-                RemoteImage([set.imageUrl, set.boxImageUrl], maxPointSize: 360) { heroLoaded = $0 }
-                    .frame(maxWidth: .infinity).frame(height: 240)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: Bw.cardRadius, style: .continuous))
-                    .clipShape(RoundedRectangle(cornerRadius: Bw.cardRadius, style: .continuous))
+            // Swipe (or tap a thumbnail) between the render and the box shot; a tap opens the full-screen
+            // gallery at the image showing. Inert while only the "No image" tile is up.
+            HeroImageGallery(urls: set.heroUrls) { loaded, index in
+                sheets.showGallery(loaded, startingAt: loaded[index])
             }
-            .buttonStyle(.plain)
 
             Text(set.name).font(.title3.weight(.bold)).multilineTextAlignment(.center)
 
