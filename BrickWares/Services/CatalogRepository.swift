@@ -232,17 +232,21 @@ final class CatalogRepository: Sendable {
         return rows.map { ThemeSubthemeCount(theme: $0.theme, subtheme: $0.subtheme, count: $0.minifigCount) }
     }
 
-    /// `!inner` so only figs that appear in a set of this theme come back; the embedded sets are also
-    /// filtered to this theme, which is what the in-theme browse wants.
+    /// The minifigs that appear in a set of `theme`, in two steps: the in-theme fig_nums (`!inner` + the
+    /// theme filter), then each fig's FULL record via `fetchMinifigs(figNums:)`. Building the figs off the
+    /// theme-FILTERED join under-reported `setCount` — a fig in three Star Wars sets and two others read
+    /// "in 3 sets" here vs "in 5" in search, and the most-sets sort used the truncated number — and listed
+    /// only this theme on the card. The in-theme subtheme filter matches exact (theme, subtheme) pairs, so
+    /// the extra themes don't leak into it.
     @concurrent
     func minifigsInTheme(_ theme: String) async throws -> [Minifig] {
-        let rows: [MinifigRow] = try await allPages {
+        let rows: [FigNumRow] = try await allPages {
             $0.from("minifigs")
-                .select("fig_num,name,num_parts,image_url,set_minifigs!inner(set_id,sets!inner(theme,subtheme))")
+                .select("fig_num,set_minifigs!inner(sets!inner(theme))")
                 .eq("set_minifigs.sets.theme", value: theme)
                 .order("fig_num")
         }
-        return rows.map { $0.toMinifig() }.uniqued(by: \.figNum)
+        return try await fetchMinifigs(figNums: rows.map(\.figNum)).sorted { $0.figNum < $1.figNum }
     }
 
     @concurrent
@@ -475,6 +479,12 @@ private struct SetRow: Decodable, Sendable {
             setId: setId
         )
     }
+}
+
+/// Just a fig_num — the in-theme lookup, which re-resolves full data via `fetchMinifigs(figNums:)`.
+private struct FigNumRow: Decodable, Sendable {
+    var figNum: String
+    enum CodingKeys: String, CodingKey { case figNum = "fig_num" }
 }
 
 private struct MinifigRow: Decodable, Sendable {

@@ -35,6 +35,9 @@ struct AddToCollectionSheet: View {
     @State private var salesMode = false
     @State private var paid = ""
     @State private var salePrice = ""
+    /// Set once the USER types an amount, so the retail prefill stops following the item / quantity.
+    @State private var paidEdited = false
+    @State private var saleEdited = false
     @State private var qty = "1"
     @State private var condition: Condition = .new
     @State private var date = Date()
@@ -94,14 +97,19 @@ struct AddToCollectionSheet: View {
 
                 if selected != nil {
                     Section {
-                        moneyField(L("sheet_field_paid"), text: $paid, field: .paid)
-                        if salesMode { moneyField(L("sheet_field_sale_price"), text: $salePrice, field: .sale) }
+                        moneyField(L("sheet_field_paid"), text: typed($paid, edited: $paidEdited), field: .paid)
+                        if salesMode {
+                            moneyField(L("sheet_field_sale_price"), text: typed($salePrice, edited: $saleEdited), field: .sale)
+                        }
                         LabeledContent(L("sheet_field_qty")) {
                             TextField("1", text: $qty)
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.trailing)
                                 .focused($focus, equals: .qty)
-                                .onChange(of: qty) { _, new in qty = String(new.filter(\.isNumber).prefix(4)) }
+                                .onChange(of: qty) { _, new in
+                                    let clean = String(new.filter(\.isNumber).prefix(4))
+                                    if clean != new { qty = clean } else { rescalePrefill() }
+                                }
                         }
                         Picker(L("sheet_field_condition"), selection: $condition) {
                             Text(L("sheet_condition_new")).tag(Condition.new)
@@ -226,11 +234,31 @@ struct AddToCollectionSheet: View {
         }
     }
 
+    /// A money-field binding that records that the USER changed the amount. Programmatic prefills assign
+    /// the state directly and never pass through here.
+    private func typed(_ text: Binding<String>, edited: Binding<Bool>) -> Binding<String> {
+        Binding(get: { text.wrappedValue }, set: { new in
+            guard new != text.wrappedValue else { return }
+            text.wrappedValue = new
+            edited.wrappedValue = true
+        })
+    }
+
+    /// Prefill for a newly chosen item / mode: fills an empty field, and replaces a prefill the user never
+    /// touched (so it follows the item), but never an amount they typed.
     private func prefillFromRetail(_ item: CatalogSet) {
-        guard !isEdit, let retail = item.retailPrice, retail > 0 else { return }
-        let text = Money.fieldText(retail, from: .usd, to: currency)
-        if paid.isEmpty { paid = text }
-        if salesMode, salePrice.isEmpty { salePrice = text }
+        guard !isEdit, let text = Money.retailFieldText(item.retailPrice, units: Int(qty) ?? 1, to: currency) else { return }
+        if paid.isEmpty || !paidEdited { paid = text }
+        if salesMode, salePrice.isEmpty || !saleEdited { salePrice = text }
+    }
+
+    /// Keep the retail prefill in step with the quantity — unless the user typed their own amount, or this
+    /// is an edit (whose prefill is the stored total, not a retail estimate).
+    private func rescalePrefill() {
+        guard !isEdit, let item = selected, let units = Int(qty), units > 0,
+              let text = Money.retailFieldText(item.retailPrice, units: units, to: currency) else { return }
+        if !paidEdited { paid = text }
+        if salesMode, !saleEdited { salePrice = text }
     }
 
     /// Debounced catalog lookup for the typed set number (a bounded server query, not a local scan).
@@ -302,10 +330,18 @@ struct SellCopySheet: View {
 
     @State private var qty = ""
     @State private var salePrice = ""
+    /// Set once the user types a price, so the retail prefill stops following the quantity.
+    @State private var saleEdited = false
     @State private var date = Date()
 
     private var currency: AppCurrency { settings.currency }
     private var maxQty: Int { max(1, copy.qty) }
+
+    /// The sale row stores the TOTAL for the units sold (`sellCopy` prorates the cost by quantity), so the
+    /// prefill is retail × quantity — one unit's retail recorded a break-even multi-unit sale as a loss.
+    private func retailText(units: Int) -> String? {
+        Money.retailFieldText(item.retailPrice, units: units, to: currency)
+    }
     private var canSell: Bool { (1...maxQty).contains(Int(qty) ?? 0) && !salePrice.isEmpty }
 
     var body: some View {
@@ -324,13 +360,22 @@ struct SellCopySheet: View {
                             .onChange(of: qty) { _, new in
                                 let digits = new.filter(\.isNumber)
                                 // Values above what's available clamp to the max; blank stays allowed.
-                                qty = Int(digits).map { String(min($0, maxQty)) } ?? ""
+                                let clean = Int(digits).map { String(min($0, maxQty)) } ?? ""
+                                if clean != new { qty = clean; return }
+                                // Keep the retail prefill in step with the quantity until the user edits it.
+                                if !saleEdited, let units = Int(clean), units > 0, let text = retailText(units: units) {
+                                    salePrice = text
+                                }
                             }
                     }
                     LabeledContent(L("sheet_field_sale_price")) {
                         HStack(spacing: 3) {
                             if currency == .usd { Text(currency.symbol).foregroundStyle(Bw.textMuted) }
-                            TextField("0", text: $salePrice)
+                            TextField("0", text: Binding(get: { salePrice }, set: { new in
+                                guard new != salePrice else { return }
+                                salePrice = new
+                                saleEdited = true
+                            }))
                                 .keyboardType(currency == .usd ? .decimalPad : .numberPad)
                                 .multilineTextAlignment(.trailing)
                                 .onChange(of: salePrice) { _, new in
@@ -364,7 +409,7 @@ struct SellCopySheet: View {
         .presentationDetents([.medium, .large])
         .onAppear {
             qty = String(maxQty)
-            if item.retailPrice > 0 { salePrice = Money.fieldText(item.retailPrice, from: .usd, to: currency) }
+            if let text = retailText(units: maxQty) { salePrice = text }
         }
     }
 }

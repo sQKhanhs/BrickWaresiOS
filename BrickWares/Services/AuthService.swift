@@ -131,11 +131,21 @@ final class AuthService {
             let response = try await client.auth.signUp(
                 email: email, password: password, data: ["lang": .string(lang)], captchaToken: captchaToken
             )
-            // A session right away means auto-confirm (local stack); otherwise the OTP step follows.
-            return response.session != nil ? .success : .emailConfirmationRequired
+            return Self.signUpOutcome(hasSession: response.session != nil, identityCount: response.user.identities?.count)
         } catch {
             return Self.mapError(error)
         }
+    }
+
+    /// What a sign-up response means. A session right away is auto-confirm (the local stack). Otherwise
+    /// the OTP step follows — EXCEPT when the address is already registered and confirmed: GoTrue then
+    /// answers with a fake success (no email is sent — anti-enumeration) whose only tell is an EMPTY
+    /// identities list. Without this check the UI parks on the code screen waiting for an email that never
+    /// comes. (An existing but unconfirmed address gets a fresh code and a real identity, so it still
+    /// lands on the code screen.)
+    nonisolated static func signUpOutcome(hasSession: Bool, identityCount: Int?) -> SignInResult {
+        if hasSession { return .success }
+        return identityCount == 0 ? .emailAlreadyRegistered : .emailConfirmationRequired
     }
 
     func verifySignUpCode(email: String, code: String) async -> SignInResult {

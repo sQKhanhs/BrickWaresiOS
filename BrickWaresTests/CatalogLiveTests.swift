@@ -43,8 +43,21 @@ struct CatalogLiveTests {
     }
 
     @Test func minifigThemeBrowse() async throws {
-        let figs = try await catalog.minifigsInTheme("Architecture")
-        _ = figs // may be empty; must not throw (exercises the !inner embedded filter)
+        _ = try await catalog.minifigsInTheme("Architecture") // may be empty; must not throw (!inner embedded filter)
         #expect(try await catalog.minifigThemeCounts().count > 50)
+
+        // A small theme whose figs are full records, not the theme-filtered slice: unique, fig_num-ordered,
+        // each listing the theme it was found under.
+        let theme = "Prince of Persia"
+        let figs = try await catalog.minifigsInTheme(theme)
+        #expect(!figs.isEmpty)
+        #expect(figs.allSatisfy { $0.themes.contains(theme) })
+        #expect(figs.map(\.figNum) == figs.map(\.figNum).sorted())
+        #expect(Set(figs.map(\.figNum)).count == figs.count)
+        // fig-002229 is in ONE Prince of Persia set but dozens of sets across many themes; counting off the
+        // theme-filtered join reported "in 1 set" here (and sorted "most sets" on it).
+        let shared = try #require(figs.first { $0.figNum == "fig-002229" })
+        #expect(shared.setCount >= 10)
+        #expect(shared.themes.count >= 2)
     }
 }

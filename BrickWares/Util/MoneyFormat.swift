@@ -72,6 +72,16 @@ enum Money {
         }
     }
 
+    /// Field text for a retail-based prefill: retail (USD cents) × `units`, in `currency`. Paid and sale
+    /// price are stored as the TOTAL for the quantity, so a one-unit prefill understated every multi-unit
+    /// add or sale (Android c626259). Nil when there is no retail, or the total wouldn't fit the field —
+    /// the input sanitizer would truncate it into a different amount.
+    static func retailFieldText(_ retailUsdCents: Int64?, units: Int, to currency: AppCurrency) -> String? {
+        guard let retail = retailUsdCents, retail > 0 else { return nil }
+        let text = fieldText(retail * Int64(max(1, units)), from: .usd, to: currency)
+        return sanitizeInput(text, currency) == text ? text : nil
+    }
+
     /// Sanitizes raw money-field text: VND digits only; USD digits plus one '.' and ≤ 2 decimals.
     static func sanitizeInput(_ raw: String, _ currency: AppCurrency, maxDigits: Int = 10) -> String {
         switch currency {

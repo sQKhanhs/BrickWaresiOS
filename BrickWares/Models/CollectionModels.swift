@@ -217,7 +217,9 @@ enum CollectionStats {
         let avg = sold.isEmpty ? 0 : sold.map(\.profitPercent).reduce(0, +) / Double(sold.count)
         let overall = totalPaid == 0 ? 0 : Double(totalProfit) / Double(totalPaid) * 100.0
         return SalesSummary(
-            totalSold: sold.count, totalSaleValue: totalSale, totalProfit: totalProfit,
+            // Units, not rows: one sale of 3 units is 3 sold (the Collection count dropped by 3), and
+            // identical sales merge into one row anyway.
+            totalSold: sold.reduce(0) { $0 + $1.quantity }, totalSaleValue: totalSale, totalProfit: totalProfit,
             avgProfitPercent: avg, profitPercent: overall
         )
     }
