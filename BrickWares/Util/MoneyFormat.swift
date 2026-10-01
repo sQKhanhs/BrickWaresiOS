@@ -82,6 +82,13 @@ enum Money {
         return sanitizeInput(text, currency) == text ? text : nil
     }
 
+    /// What a money field shows after a retail prefill for a newly chosen item or mode. An amount the user
+    /// typed is kept; an empty field or an untouched earlier prefill takes the new estimate — and is
+    /// EMPTIED when there is none, so one item's prefill never stays in the field under the next item.
+    static func prefilled(_ current: String, edited: Bool, retail: String?) -> String {
+        current.isEmpty || !edited ? (retail ?? "") : current
+    }
+
     /// Sanitizes raw money-field text: VND digits only; USD digits plus one '.' and ≤ 2 decimals.
     static func sanitizeInput(_ raw: String, _ currency: AppCurrency, maxDigits: Int = 10) -> String {
         switch currency {

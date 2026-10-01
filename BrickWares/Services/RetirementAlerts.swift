@@ -12,6 +12,10 @@ import os
 /// time. Delivered as an in-app toast when the app is frontmost, else as a local notification whose
 /// tap opens the Wishlist tab.
 ///
+/// The baseline only moves while a check may run (`shouldCheck`): a retirement during a signed-out spell
+/// alerts once the account is back, and switching alerts on starts from a clean baseline
+/// (`resetBaseline`) so only FUTURE retirements are reported.
+///
 /// iOS gives no guaranteed daily cadence (BGAppRefresh is best-effort), so the same check also runs
 /// every time the app returns to the foreground.
 @MainActor
@@ -73,8 +77,26 @@ enum RetirementAlerts {
 
     // MARK: The check
 
+    /// Whether a check may run — and so move the baseline — at all. Not while alerts are off, and not
+    /// while explicitly signed out: the wishlist is account data, and a signed-out session's rows stay on
+    /// disk (hidden), so checking them recorded a retirement as already seen with nobody to tell, and the
+    /// alert was lost for good. An unresolved session (a fresh background launch) still checks, as on
+    /// Android — the toggle can only have been switched on by someone signed in.
+    static func shouldCheck(enabled: Bool, auth: AuthState) -> Bool {
+        enabled && auth != .signedOut
+    }
+
+    /// Forget what the last check saw, so the next one baselines silently. Called when alerts are switched
+    /// ON: nothing is tracked while they are off, and without this the first check reported every
+    /// retirement from the off period as new. (Android reaches the same result by tracking while off.)
+    static func resetBaseline() {
+        AppSettings.shared.lastWishlist = []
+        AppSettings.shared.lastRetired = []
+    }
+
     private static func run(foreground: Bool, router: AppRouter?) async -> Bool {
-        guard AppSettings.shared.retirementAlerts, let container else { return true }
+        guard shouldCheck(enabled: AppSettings.shared.retirementAlerts, auth: AuthService.shared.state),
+              let container else { return true }
         let rows = (try? WishlistItem.fetchActive(in: container.mainContext)) ?? []
         // Only diff against AUTHORITATIVE statuses: force-refresh the referenced catalog first, and
         // skip the evaluation entirely when that fails (stored statuses may be stale either way).
@@ -84,7 +106,7 @@ enum RetirementAlerts {
 
         let entries = DisplayBuilder.wishlist(rows)
         let names = evaluate(entries)
-        guard !names.isEmpty, AuthService.shared.state != .signedOut else { return true }
+        guard !names.isEmpty else { return true }
 
         let message = names.count == 1 ? L("notif_retired_one", names[0]) : L("notif_retired_many", names.count)
         if foreground, UIApplication.shared.applicationState == .active {

@@ -245,11 +245,14 @@ struct AddToCollectionSheet: View {
     }
 
     /// Prefill for a newly chosen item / mode: fills an empty field, and replaces a prefill the user never
-    /// touched (so it follows the item), but never an amount they typed.
+    /// touched (so it follows the item), but never an amount they typed. An item with NO retail price
+    /// empties such a prefill — returning early here left the previously picked item's amount in the field
+    /// (pick a set, clear it, pick one without a retail price).
     private func prefillFromRetail(_ item: CatalogSet) {
-        guard !isEdit, let text = Money.retailFieldText(item.retailPrice, units: Int(qty) ?? 1, to: currency) else { return }
-        if paid.isEmpty || !paidEdited { paid = text }
-        if salesMode, salePrice.isEmpty || !saleEdited { salePrice = text }
+        guard !isEdit else { return }
+        let retail = Money.retailFieldText(item.retailPrice, units: Int(qty) ?? 1, to: currency)
+        paid = Money.prefilled(paid, edited: paidEdited, retail: retail)
+        if salesMode { salePrice = Money.prefilled(salePrice, edited: saleEdited, retail: retail) }
     }
 
     /// Keep the retail prefill in step with the quantity — unless the user typed their own amount, or this

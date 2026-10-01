@@ -199,6 +199,8 @@ struct SettingsView: View {
         }
         Task {
             if await RetirementAlerts.requestPermission() == .granted {
+                // Start clean: what retired while alerts were off is not news.
+                RetirementAlerts.resetBaseline()
                 settings.retirementAlerts = true
                 RetirementAlerts.scheduleNext()
             } else {
