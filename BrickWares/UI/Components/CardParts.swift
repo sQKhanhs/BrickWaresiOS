@@ -211,24 +211,6 @@ struct BannerImage: View {
     }
 }
 
-/// Three-up stat tiles (Sets / Minifigs / Pieces, or the Sales tiles).
-struct StatTile: View {
-    let value: String
-    let label: String
-    var valueColor: Color = Bw.text
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text(value).font(.title3.weight(.bold)).foregroundStyle(valueColor)
-                .minimumScaleFactor(0.6).lineLimit(1)
-                .contentTransition(.numericText())
-            Text(label).font(.caption2.weight(.semibold)).foregroundStyle(Bw.textMuted).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-        .bwCard(padding: 12)
-    }
-}
-
 /// One column in a `StatCardRow`: an outline icon, a big count, and a label.
 struct StatEntry: Identifiable {
     let icon: String

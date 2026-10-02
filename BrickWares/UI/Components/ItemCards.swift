@@ -164,8 +164,10 @@ struct WishlistButton: View {
     }
 }
 
-/// "Label value" meta line; a long value (a theme, or a minifig's joined themes) wraps to a second line
-/// instead of being cut off with "…".
+/// "Label value" meta line, flowing like Android's (a `FlowRow`): label and value share a line when they
+/// fit; when they don't, the value drops to the next line WHOLE and may then wrap to two lines there —
+/// instead of being squeezed into a narrow column beside the label ("Pieces /" over "Minifigs", or a
+/// theme broken across a hanging indent).
 struct MetaLine: View {
     let label: String
     let value: String
@@ -175,12 +177,27 @@ struct MetaLine: View {
         self.value = value
     }
 
+    private var labelText: some View {
+        Text(label).font(.caption2).foregroundStyle(Bw.textMuted).lineLimit(1)
+    }
+
+    private var valueText: some View {
+        Text(value.isEmpty ? "—" : value).font(.caption2.weight(.semibold)).foregroundStyle(Bw.textSecondary)
+            .multilineTextAlignment(.leading)
+    }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Text(label).font(.caption2).foregroundStyle(Bw.textMuted)
-            Text(value.isEmpty ? "—" : value).font(.caption2.weight(.semibold)).foregroundStyle(Bw.textSecondary)
-                .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                labelText
+                valueText.lineLimit(1)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                labelText
+                valueText.lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -43,3 +43,34 @@ struct FloatingActionButton: View {
         .onChange(of: pulse, initial: true) { _, on in dimmed = on }
     }
 }
+
+/// The Collection ⇄ Sales switch: a round button floating at the bottom-LEFT of the Collection tab,
+/// opposite the add button — Android's "swap FAB" (52 pt, card-coloured with a border, turning brand
+/// yellow while Sales is showing). It replaced a segmented control in the navigation bar, which sat out
+/// of thumb reach. Which mode is showing is also told by the banner title ("My Collection" / "My Sales").
+struct SalesSwapButton: View {
+    let salesActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let tint = salesActive ? Bw.onYellow : Bw.text
+        Button(action: action) {
+            ZStack {
+                Image("ic_bw_sales_swap").resizable().scaledToFit().frame(width: 26, height: 26)
+                Text(verbatim: "$").font(.system(size: 9, weight: .black))
+            }
+            .foregroundStyle(tint)
+            .frame(width: 52, height: 52)
+            .background(salesActive ? Bw.yellow : Bw.card, in: Circle())
+            .overlay(Circle().strokeBorder(salesActive ? Bw.yellow : Bw.borderStrong, lineWidth: 1.5))
+            .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("collection_toggle_sales_cd"))
+        .accessibilityAddTraits(salesActive ? .isSelected : [])
+        .padding(.leading, 20)
+        .padding(.bottom, 24)
+    }
+}
+

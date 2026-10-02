@@ -112,20 +112,15 @@ struct CollectionView: View {
                 )
             }
         }
+        // Collection ⇄ Sales, bottom-left like Android's swap button (always there, also signed out).
+        .overlay(alignment: .bottomLeading) {
+            SalesSwapButton(salesActive: mode == .sales) {
+                withAnimation(.snappy) { mode = mode == .sales ? .collection : .sales }
+            }
+        }
         .bwScreen()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Picker("", selection: $mode.animation(.snappy)) {
-                    Text(L("sheet_mode_collection")).tag(Mode.collection)
-                    Text(L("sheet_mode_sales")).tag(Mode.sales)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 190)
-                .accessibilityLabel(L("collection_toggle_sales_cd"))
-            }
-        }
         .itemSheets()
         // A centred alert, like Android's dialog. A `confirmationDialog` is anchored to the view it hangs
         // on: on iOS 26 it grows out of that view as a popover, which put it at the top of the list,
@@ -256,16 +251,49 @@ private struct AddButton: View {
     }
 }
 
-private struct SalesSummaryTiles: View {
+/// The Sales summary, laid out like Android's `SalesStatsRow` + `ProfitBar`: Total Sold in a round cream
+/// badge, Sale Value in a shorter cream card centred against it, then the profit bar.
+struct SalesSummaryTiles: View {
     let summary: SalesSummary
     let currency: AppCurrency
 
+    private var cream: Color { Bw.yellow.opacity(0.16) }
+    private var gold: Color { Bw.link2 }
+
     var body: some View {
         let color: Color = summary.totalProfit > 0 ? Bw.success : (summary.totalProfit < 0 ? Bw.error : Bw.textMuted)
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                StatTile(value: Money.count(summary.totalSold), label: L("sales_total_sold"))
-                StatTile(value: Money.formatIn(summary.totalSaleValue, currency), label: L("sales_sale_value"))
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                VStack(spacing: 0) {
+                    Image("ic_bw_set").resizable().scaledToFit().frame(width: 22, height: 22).foregroundStyle(gold)
+                    Text(L("sales_total_sold"))
+                        .font(.system(size: 10, weight: .bold)).tracking(0.4).foregroundStyle(gold)
+                        .lineLimit(1).minimumScaleFactor(0.7).padding(.top, 6)
+                    Text(Money.count(summary.totalSold))
+                        .font(.system(size: 22, weight: .black)).foregroundStyle(Bw.text)
+                        .lineLimit(1).minimumScaleFactor(0.6).contentTransition(.numericText())
+                        .padding(.top, 2)
+                }
+                .padding(.horizontal, 10)
+                .frame(width: 112, height: 112)
+                .background(cream, in: Circle())
+                .accessibilityElement(children: .combine)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        Text(verbatim: "$").font(.system(size: 18, weight: .bold))
+                        Text(L("sales_sale_value")).font(.system(size: 12, weight: .bold)).tracking(0.4).lineLimit(1)
+                    }
+                    .foregroundStyle(gold)
+                    Text(Money.formatIn(summary.totalSaleValue, currency))
+                        .font(.system(size: 22, weight: .black)).foregroundStyle(Bw.text)
+                        .lineLimit(1).minimumScaleFactor(0.5).contentTransition(.numericText())
+                }
+                .padding(.horizontal, 18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 88)
+                .background(cream, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .accessibilityElement(children: .combine)
             }
             HStack(spacing: 8) {
                 // No arrow and no "+" at exactly zero.
@@ -357,6 +385,9 @@ struct OwnedItemCard: View {
     }
 }
 
+/// A sale on the Collection tab's Sales side — Android's `SoldCard`: the catalog facts on the left (a
+/// minifig shows just its number and name), retail and current value over the sale's own figures on the
+/// right.
 struct SoldItemCard: View {
     let sale: SoldItem
 
@@ -365,6 +396,8 @@ struct SoldItemCard: View {
     @Environment(ItemSheetCoordinator.self) private var sheets
 
     private var isFig: Bool { sale.itemType == .minifig }
+    /// Current value only where it means something: retired / promo / magazine sets.
+    private var showValue: Bool { !isFig && sale.status.showsCommunityValue }
 
     var body: some View {
         let currency = settings.currency
@@ -373,21 +406,25 @@ struct SoldItemCard: View {
             ItemThumb(urls: isFig ? [sale.imageUrl] : RowImages.card(imageUrl: sale.imageUrl, boxImageUrl: sale.boxImageUrl), size: 72)
 
             VStack(alignment: .leading, spacing: 5) {
-                Button { router.open(sale.figNum != nil ? .minifig(sale.setNumber) : .set(CatalogKey.forRow(setId: sale.setId, setNumber: sale.setNumber))) } label: {
-                    Text(isFig ? sale.name : "\(sale.setNumber) \(sale.name)")
-                        .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
+                if isFig {
+                    Text(sale.setNumber).font(.caption2).foregroundStyle(Bw.textMuted)
+                    title(sale.name)
+                } else {
+                    title("\(sale.setNumber) \(sale.name)")
+                    MetaLine(L("meta_theme"), sale.theme)
+                    MetaLine(L("meta_release"), releaseLabel(year: sale.releaseYear, month: sale.releaseMonth))
+                    MetaLine(L("meta_pieces_minifigs"), "\(Money.count(sale.pieces)) / \(sale.minifigs)")
+                    StatusBadge(status: sale.status)
                 }
-                .buttonStyle(.plain)
-                MetaLine(L("meta_theme"), sale.theme)
-                if !isFig { MetaLine(L("meta_release"), releaseLabel(year: sale.releaseYear, month: sale.releaseMonth)) }
-                MetaLine(L("sd_qty"), "×\(sale.quantity)")
-                if let soldOn = sale.soldOn { MetaLine(L("sd_date"), soldOn) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .trailing, spacing: 5) {
-                if !isFig, sale.retailPrice > 0 {
-                    PriceLine(label: L("price_retail"), value: Money.format(usdCents: sale.retailPrice, in: currency))
+                // Sets: retail (and current value) above a rule, then the sale's own figures.
+                if !isFig {
+                    PriceLine(label: L("price_retail"), value: sale.retailPrice > 0 ? Money.format(usdCents: sale.retailPrice, in: currency) : L("price_no_retail"))
+                    if showValue { ValueLine(label: L("price_value"), value: sale.currentValueInfo) }
+                    Divider().overlay(Bw.borderSoft)
                 }
                 PriceLine(label: L("price_paid"), value: Money.format(sale.pricePaid, from: sale.currency, to: currency))
                 PriceLine(label: L("price_sale"), value: Money.format(sale.saleValue, from: sale.currency, to: currency), bold: true)
@@ -403,5 +440,12 @@ struct SoldItemCard: View {
             .priceColumn()
         }
         .bwCard()
+    }
+
+    private func title(_ text: String) -> some View {
+        Button { router.open(sale.figNum != nil ? .minifig(sale.setNumber) : .set(CatalogKey.forRow(setId: sale.setId, setNumber: sale.setNumber))) } label: {
+            Text(text).font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
+        }
+        .buttonStyle(.plain)
     }
 }
