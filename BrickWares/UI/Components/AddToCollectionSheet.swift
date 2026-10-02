@@ -353,7 +353,7 @@ struct SellCopySheet: View {
                 Section {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: "\(item.setNumber) \(item.name)").font(.subheadline.weight(.bold))
-                        PriceLine(label: L("price_paid"), value: Money.format(copy.pricePaid, from: copy.currency, to: currency))
+                        PriceLine(label: L("price_paid"), value: Money.format(copy.pricePaid, from: copy.currency, to: currency), spread: false)
                     }
                 }
                 Section {

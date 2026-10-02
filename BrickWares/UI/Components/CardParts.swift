@@ -19,17 +19,23 @@ struct StatusBadge: View {
     }
 }
 
-/// "▲ +12.5% Growth" / "▼ -3% Growth" / "0% Growth".
+/// "▲ +12.5% Growth" / "▼ -3% Growth" / "0% Growth". On item cards it is a tinted pill (Android's
+/// `GrowthPill`).
 struct GrowthLabel: View {
     let percent: Double
     var compact = false
+    var pill = false
 
     var body: some View {
-        let color: Color = percent > 0 ? Bw.success : (percent < 0 ? Bw.error : Bw.textMuted)
+        // Judged on the one-decimal-rounded percent, so 0.04 % reads flat like its label does.
+        let tenths = (percent * 10).rounded()
+        let color: Color = tenths > 0 ? Bw.success : (tenths < 0 ? Bw.error : Bw.textMuted)
         Text(text)
-            .font((compact ? Font.caption2 : .caption).weight(.semibold))
+            .font((compact ? Font.caption2 : .caption).weight(pill ? .bold : .semibold))
             .foregroundStyle(color)
             .lineLimit(1)
+            .padding(.horizontal, pill ? 8 : 0).padding(.vertical, pill ? 3 : 0)
+            .background(color.opacity(pill ? 0.15 : 0), in: Capsule())
     }
 
     private var text: String {
@@ -47,57 +53,126 @@ extension Money {
     }
 }
 
-/// A "Label  value" line used on cards (Retail / Paid / Value / Sale).
+/// A "label ……… value" row of a card's price column (Retail / Paid / Sale / Profit): the label at the
+/// leading edge, the amount at the trailing edge, on one line (Android's `PriceLine`). `spread: false`
+/// keeps the two side by side for use outside a column.
 struct PriceLine: View {
     let label: String
     let value: String
     var valueColor: Color = Bw.text
-    var bold = false
+    var bold = true
+    var spread = true
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(label).font(.caption).foregroundStyle(Bw.textMuted)
+            Text(label).font(.caption2).foregroundStyle(Bw.textMuted)
+            if spread { Spacer(minLength: 0) }
             Text(value).font(.caption.weight(bold ? .bold : .semibold)).foregroundStyle(valueColor)
+                .minimumScaleFactor(0.8)
         }
         .lineLimit(1)
     }
 }
 
-/// The community "current value" with its ⓘ explainer. Shows "…" while loading and "----" when
-/// there is no value; a stale value is muted.
+/// The "!" that explains a current value — how many price points it rests on, or that there is none
+/// yet (Android's `ValueInfoBubble`). On item cards it sits beside the status badge (or a minifig's
+/// "In N sets"), not on the value line, so it can't squeeze a long ₫ amount.
+struct ValueInfoButton: View {
+    let value: CurrentValue?
+    @State private var showInfo = false
+
+    var body: some View {
+        Button { showInfo = true } label: {
+            Text(verbatim: "!").font(.system(size: 11, weight: .bold)).foregroundStyle(Bw.textMuted)
+                .frame(width: 16, height: 16)
+                .background(Bw.textMuted.opacity(0.18), in: Circle())
+                // A thumb-sized target around the small glyph.
+                .padding(4).contentShape(Rectangle()).padding(-4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("current_value"))
+        .popover(isPresented: $showInfo, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+            Text(ValueLine.note(for: value))
+                .font(.footnote)
+                .foregroundStyle(Bw.text)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(14)
+                .frame(maxWidth: 280)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+extension View {
+    /// A card title: up to four lines, and always its full wrapped height. Without the vertical
+    /// `fixedSize`, a title in a card whose meta lines re-flow (see `MetaLine`) could be measured at one
+    /// line and truncated ("10297 Boutiq…").
+    func cardTitleLines() -> some View {
+        lineLimit(4).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A status badge with the value "!" beside it — used wherever the card also shows a Value line.
+struct StatusBadgeWithValueInfo: View {
+    let status: Availability
+    let value: CurrentValue?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            StatusBadge(status: status)
+            ValueInfoButton(value: value)
+        }
+    }
+}
+
+/// A minifig's "In N sets" with the value "!" beside it (minifig cards have no status badge to park
+/// it next to). Shown only when the count is known.
+struct MinifigSetsWithValueInfo: View {
+    let setCount: Int
+    let value: CurrentValue?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(L(setCount == 1 ? "search_minifig_sets_one" : "search_minifig_sets_other", setCount))
+                .font(.caption).foregroundStyle(Bw.textMuted).lineLimit(1)
+            ValueInfoButton(value: value)
+        }
+    }
+}
+
+/// The community "current value". Shows "…" while loading and "----" when there is no value; a stale
+/// value is muted. On a card (`spread`) it is a price-column row like `PriceLine`, and the "!" explainer
+/// usually lives beside the status badge instead (`showsInfo: false`).
 struct ValueLine: View {
     let label: String
     let value: CurrentValue?
     var isLoading = false
     var font: Font = .caption
+    var spread = false
+    var showsInfo = true
 
     @Environment(AppSettings.self) private var settings
-    @State private var showInfo = false
 
     var body: some View {
         let _ = settings.ratesRevision
         HStack(spacing: 6) {
-            Text(label).font(font).foregroundStyle(Bw.textMuted)
-            Text(text)
-                .font(font.weight(.semibold))
-                .foregroundStyle(value?.freshness == .stale ? Bw.textMuted : Bw.text)
-            Button { showInfo = true } label: {
-                Image(systemName: "info.circle").font(font).foregroundStyle(Bw.link)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("current_value"))
-            .popover(isPresented: $showInfo, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
-                Text(Self.note(for: value))
-                    .font(.footnote)
-                    .foregroundStyle(Bw.text)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(14)
-                    .frame(maxWidth: 280)
-                    .presentationCompactAdaptation(.popover)
+            if spread {
+                Text(label).font(.caption2).foregroundStyle(Bw.textMuted)
+                if showsInfo { ValueInfoButton(value: value) }
+                Spacer(minLength: 0)
+                amount.font(.caption.weight(.bold)).minimumScaleFactor(0.8)
+            } else {
+                Text(label).font(font).foregroundStyle(Bw.textMuted)
+                amount.font(font.weight(.semibold))
+                if showsInfo { ValueInfoButton(value: value) }
             }
         }
         .lineLimit(1)
+    }
+
+    private var amount: Text {
+        Text(text).foregroundStyle(value?.freshness == .stale ? Bw.textMuted : Bw.text)
     }
 
     private var text: String {

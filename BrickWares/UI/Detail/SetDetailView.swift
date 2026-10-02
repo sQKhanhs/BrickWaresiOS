@@ -329,7 +329,7 @@ struct MinifigGridCard: View {
             }
             // Pushes the value line to the bottom of an equal-height card.
             Spacer(minLength: 0)
-            ValueLine(label: L("price_value"), value: value)
+            ValueLine(label: L("price_value"), value: value, spread: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

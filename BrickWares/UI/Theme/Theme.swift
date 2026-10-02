@@ -173,9 +173,13 @@ private extension View {
 }
 
 extension View {
-    /// A list card's trailing price + actions column: exactly as wide as its widest line, so prices are
-    /// never cut and `.column` buttons — which fill it — come out equal in width.
-    func priceColumn() -> some View { fixedSize(horizontal: true, vertical: false) }
+    /// A list card's trailing price + actions column. Android gives it a fixed width (120–130 dp), which
+    /// lines the columns up from card to card; here that width is a MINIMUM — the column grows to its
+    /// widest line, so a long ₫ amount or a long translated button title is never cut. Its `PriceLine`s
+    /// and `.column` buttons fill it.
+    func priceColumn(minWidth: CGFloat = 120) -> some View {
+        frame(minWidth: minWidth).fixedSize(horizontal: true, vertical: false)
+    }
 }
 
 /// Primary brand button: yellow fill, dark text.
@@ -191,17 +195,19 @@ struct BwPrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// Secondary button: outlined capsule.
+/// Secondary button: outlined capsule. `tonal` is the quieter filled variant with no outline — a card's
+/// "See Detail" (Android's track-coloured pill).
 struct BwSecondaryButtonStyle: ButtonStyle {
     var size: BwButtonSize = .regular
     var tint: Color = Bw.text
+    var tonal = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(tint)
             .bwButtonLabel(size)
-            .background(Bw.surface.opacity(configuration.isPressed ? 0.6 : 1), in: Capsule())
-            .overlay(Capsule().strokeBorder(Bw.borderStrong))
+            .background((tonal ? Bw.track : Bw.surface).opacity(configuration.isPressed ? 0.6 : 1), in: Capsule())
+            .overlay(Capsule().strokeBorder(tonal ? Color.clear : Bw.borderStrong))
     }
 }
 
@@ -215,6 +221,7 @@ extension ButtonStyle where Self == BwSecondaryButtonStyle {
     static var bwSecondary: BwSecondaryButtonStyle { .init() }
     static var bwSecondaryCompact: BwSecondaryButtonStyle { .init(size: .compact) }
     static var bwSecondaryColumn: BwSecondaryButtonStyle { .init(size: .column) }
+    static var bwTonalColumn: BwSecondaryButtonStyle { .init(size: .column, tonal: true) }
 }
 
 /// "Oct 2017" / "2017" / "—" — localized month names.

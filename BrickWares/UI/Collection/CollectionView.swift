@@ -323,6 +323,14 @@ struct SalesSummaryTiles: View {
 
 // MARK: - Cards
 
+/// An owned item on the Collection tab — Android's `ItemCard`.
+///
+/// What it shows, by kind:
+/// - **Set:** Theme / Release / Pieces-Minifigs / status on the left; Retail, Paid and growth on the
+///   right. The community **Value** appears only for a retired, promo or magazine set — below a rule,
+///   with its "!" explainer beside the status badge. A set still on sale is worth its retail price, so
+///   no Value line.
+/// - **Minifig:** number, name and "In N sets"; Paid, Value (always — a minifig has no retail) and growth.
 struct OwnedItemCard: View {
     let item: CollectionItem
 
@@ -331,16 +339,18 @@ struct OwnedItemCard: View {
     @Environment(ItemSheetCoordinator.self) private var sheets
 
     private var isFig: Bool { item.itemType == .minifig }
+    private var showValue: Bool { item.status.showsCommunityValue }
 
     var body: some View {
         let currency = settings.currency
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             Button {
                 sheets.showGallery(isFig ? [item.imageUrl].compactMap { $0 } : RowImages.gallery(imageUrl: item.imageUrl, boxImageUrl: item.boxImageUrl))
             } label: {
                 ItemThumb(urls: isFig ? [item.imageUrl] : RowImages.card(imageUrl: item.imageUrl, boxImageUrl: item.boxImageUrl), size: 72)
             }
             .buttonStyle(.plain)
+            .padding(.trailing, 2)
 
             VStack(alignment: .leading, spacing: 5) {
                 if isFig {
@@ -348,46 +358,54 @@ struct OwnedItemCard: View {
                     // A CMF is minifig-styled but lives in the set catalog — route it to Set detail;
                     // only a real in-set fig (figNum set) opens Minifig detail.
                     titleButton(item.name) { router.open(item.figNum != nil ? .minifig(item.setNumber) : .set(CatalogKey.forRow(setId: item.setId, setNumber: item.setNumber))) }
-                    if item.minifigSetCount > 0 { MetaLine(L("minifig_in_sets_label"), String(item.minifigSetCount)) }
+                    if item.minifigSetCount > 0 { MinifigSetsWithValueInfo(setCount: item.minifigSetCount, value: item.currentValueInfo) }
                 } else {
                     titleButton("\(item.setNumber) \(item.name)") { router.open(.set(CatalogKey.forRow(setId: item.setId, setNumber: item.setNumber))) }
                     MetaLine(L("meta_theme"), item.theme)
                     MetaLine(L("meta_release"), releaseLabel(year: item.releaseYear, month: item.releaseMonth))
                     MetaLine(L("meta_pieces_minifigs"), "\(Money.count(item.pieces)) / \(item.minifigs)")
-                    StatusBadge(status: item.status)
+                    if showValue {
+                        StatusBadgeWithValueInfo(status: item.status, value: item.currentValueInfo)
+                    } else {
+                        StatusBadge(status: item.status)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .trailing, spacing: 5) {
-                // Minifigs never show retail and always show value; sets show value only when
-                // retired / promo / magazine.
-                if !isFig {
+                let paid = PriceLine(label: L("price_paid"), value: Money.formatIn(item.totalPaid(in: currency), currency))
+                if isFig {
+                    paid
+                    // The "!" sits beside "In N sets" when that line shows; else it stays here.
+                    ValueLine(label: L("price_value"), value: item.currentValueInfo, spread: true, showsInfo: item.minifigSetCount == 0)
+                } else {
                     PriceLine(label: L("price_retail"), value: item.retailPrice > 0 ? Money.format(usdCents: item.retailPrice, in: currency) : L("price_no_retail"))
+                    if showValue { Divider().overlay(Bw.borderSoft) }
+                    paid
+                    if showValue { ValueLine(label: L("price_value"), value: item.currentValueInfo, spread: true, showsInfo: false) }
                 }
-                PriceLine(label: L("price_paid"), value: Money.formatIn(item.totalPaid(in: currency), currency), bold: true)
-                if item.valueShown { ValueLine(label: L("price_value"), value: item.currentValueInfo) }
-                if let growth = item.growthPercent { GrowthLabel(percent: growth, compact: true) }
+                if let growth = item.growthPercent { GrowthLabel(percent: growth, compact: true, pill: true) }
                 Button { sheets.details(CatalogSet(item)) } label: { Label(L("action_see_detail"), systemImage: "checkmark") }
-                    .buttonStyle(.bwSecondaryColumn)
+                    .buttonStyle(.bwTonalColumn)
                     .padding(.top, 2)
             }
-            .priceColumn()
+            .priceColumn(minWidth: 130)
         }
         .bwCard()
     }
 
     private func titleButton(_ text: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(text).font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
+            Text(text).font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).cardTitleLines()
         }
         .buttonStyle(.plain)
     }
 }
 
 /// A sale on the Collection tab's Sales side — Android's `SoldCard`: the catalog facts on the left (a
-/// minifig shows just its number and name), retail and current value over the sale's own figures on the
-/// right.
+/// minifig shows just its number and name); on the right, a set's Retail — and its current Value when it
+/// is retired, promo or magazine — above a rule, then the sale's own Paid, Sale, Profit and growth.
 struct SoldItemCard: View {
     let sale: SoldItem
 
@@ -402,8 +420,9 @@ struct SoldItemCard: View {
     var body: some View {
         let currency = settings.currency
         let profit = CurrencyConverter.shared.convert(sale.profit, from: sale.currency, to: currency)
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             ItemThumb(urls: isFig ? [sale.imageUrl] : RowImages.card(imageUrl: sale.imageUrl, boxImageUrl: sale.boxImageUrl), size: 72)
+                .padding(.trailing, 2)
 
             VStack(alignment: .leading, spacing: 5) {
                 if isFig {
@@ -414,37 +433,40 @@ struct SoldItemCard: View {
                     MetaLine(L("meta_theme"), sale.theme)
                     MetaLine(L("meta_release"), releaseLabel(year: sale.releaseYear, month: sale.releaseMonth))
                     MetaLine(L("meta_pieces_minifigs"), "\(Money.count(sale.pieces)) / \(sale.minifigs)")
-                    StatusBadge(status: sale.status)
+                    if showValue {
+                        StatusBadgeWithValueInfo(status: sale.status, value: sale.currentValueInfo)
+                    } else {
+                        StatusBadge(status: sale.status)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .trailing, spacing: 5) {
-                // Sets: retail (and current value) above a rule, then the sale's own figures.
                 if !isFig {
                     PriceLine(label: L("price_retail"), value: sale.retailPrice > 0 ? Money.format(usdCents: sale.retailPrice, in: currency) : L("price_no_retail"))
-                    if showValue { ValueLine(label: L("price_value"), value: sale.currentValueInfo) }
+                    if showValue { ValueLine(label: L("price_value"), value: sale.currentValueInfo, spread: true, showsInfo: false) }
                     Divider().overlay(Bw.borderSoft)
                 }
                 PriceLine(label: L("price_paid"), value: Money.format(sale.pricePaid, from: sale.currency, to: currency))
-                PriceLine(label: L("price_sale"), value: Money.format(sale.saleValue, from: sale.currency, to: currency), bold: true)
+                PriceLine(label: L("price_sale"), value: Money.format(sale.saleValue, from: sale.currency, to: currency))
                 PriceLine(
                     label: L("sales_profit_label"), value: (profit > 0 ? "+" : "") + Money.formatIn(profit, currency),
-                    valueColor: profit >= 0 ? Bw.success : Bw.error, bold: true
+                    valueColor: profit >= 0 ? Bw.success : Bw.error
                 )
-                GrowthLabel(percent: sale.profitPercent, compact: true)
+                GrowthLabel(percent: sale.profitPercent, compact: true, pill: true)
                 Button { sheets.details(CatalogSet(sale), tab: .sales) } label: { Label(L("action_see_detail"), systemImage: "checkmark") }
-                    .buttonStyle(.bwSecondaryColumn)
+                    .buttonStyle(.bwTonalColumn)
                     .padding(.top, 2)
             }
-            .priceColumn()
+            .priceColumn(minWidth: 130)
         }
         .bwCard()
     }
 
     private func title(_ text: String) -> some View {
         Button { router.open(sale.figNum != nil ? .minifig(sale.setNumber) : .set(CatalogKey.forRow(setId: sale.setId, setNumber: sale.setNumber))) } label: {
-            Text(text).font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
+            Text(text).font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).cardTitleLines()
         }
         .buttonStyle(.plain)
     }

@@ -121,7 +121,10 @@ struct WishlistView: View {
     }
 }
 
-private struct WishlistCard: View {
+/// A wanted item — Android's `WishlistCard`. Unlike an owned card it ALWAYS shows the community Value
+/// (whatever the status: it is what the item would cost now), with "----" until one exists and the "!"
+/// explainer beside the status badge. (Internal so it can be rendered on its own.)
+struct WishlistCard: View {
     let entry: WishlistEntry
     /// Asks to remove this entry (the screen confirms first).
     let onRemove: () -> Void
@@ -136,18 +139,19 @@ private struct WishlistCard: View {
 
     var body: some View {
         let currency = settings.currency
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             Button {
                 sheets.showGallery(isFig ? [entry.imageUrl].compactMap { $0 } : RowImages.gallery(imageUrl: entry.imageUrl, boxImageUrl: entry.boxImageUrl))
             } label: {
                 ItemThumb(urls: isFig ? [entry.imageUrl] : RowImages.card(imageUrl: entry.imageUrl, boxImageUrl: entry.boxImageUrl), size: 72)
             }
             .buttonStyle(.plain)
+            .padding(.trailing, 2)
 
             VStack(alignment: .leading, spacing: 5) {
                 Button { router.open(entry.figNum != nil ? .minifig(entry.setNumber) : .set(CatalogKey.forRow(setId: entry.setId, setNumber: entry.setNumber))) } label: {
                     Text(verbatim: "\(entry.setNumber) \(entry.name)")
-                        .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).lineLimit(3)
+                        .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link).multilineTextAlignment(.leading).cardTitleLines()
                 }
                 .buttonStyle(.plain)
                 MetaLine(L("meta_theme"), entry.theme)
@@ -156,24 +160,24 @@ private struct WishlistCard: View {
                 } else {
                     MetaLine(L("meta_release"), releaseLabel(year: entry.releaseYear, month: entry.releaseMonth))
                     MetaLine(L("meta_pieces_minifigs"), "\(Money.count(entry.pieces)) / \(entry.minifigs)")
-                    StatusBadge(status: entry.status)
+                    StatusBadgeWithValueInfo(status: entry.status, value: entry.currentValueInfo)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .trailing, spacing: 6) {
+            VStack(alignment: .trailing, spacing: 5) {
                 if !isFig {
-                    PriceLine(label: L("price_retail"), value: entry.retailPrice > 0 ? Money.format(usdCents: entry.retailPrice, in: currency) : L("price_no_retail"), bold: true)
+                    PriceLine(label: L("price_retail"), value: entry.retailPrice > 0 ? Money.format(usdCents: entry.retailPrice, in: currency) : L("price_no_retail"))
                 }
-                if entry.valueShown { ValueLine(label: L("price_value"), value: entry.currentValueInfo) }
+                // A minifig has no badge to carry the "!", so it stays on the value line.
+                ValueLine(label: L("price_value"), value: entry.currentValueInfo, spread: true, showsInfo: isFig)
                 // "Add" moves the want into the collection (owning an item removes it from the wishlist).
-                Button { sheets.add(CatalogSet(entry), allowSalesMode: false, auth: auth) } label: {
-                    Label(L("action_add"), systemImage: "plus")
-                }
-                .buttonStyle(.bwPrimaryColumn)
+                Button { sheets.add(CatalogSet(entry), allowSalesMode: false, auth: auth) } label: { CardAddLabel() }
+                    .buttonStyle(.bwPrimaryColumn)
+                    .padding(.top, 2)
                 // Same look as the shared heart, but in this tab removing asks first.
-                Button(action: onRemove) { Label(L("action_wishlisted"), systemImage: "heart.fill") }
-                    .buttonStyle(BwSecondaryButtonStyle(size: .column, tint: Color(hex: 0xC9506F)))
+                Button(action: onRemove) { CardWishlistLabel(isWishlisted: true) }
+                    .buttonStyle(.bwSecondaryColumn)
             }
             .priceColumn()
         }
