@@ -3146,6 +3146,40 @@
         }
       }
     },
+    "search_minifig_sets_one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In %lld set"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Có trong %lld bộ"
+          }
+        }
+      }
+    },
+    "search_minifig_sets_other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In %lld sets"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Có trong %lld bộ"
+          }
+        }
+      }
+    },
     "search_mode_minifigs_cd": {
       "extractionState": "manual",
       "localizations": {

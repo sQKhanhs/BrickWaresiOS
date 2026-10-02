@@ -153,21 +153,21 @@ struct SetDetailView: View {
     }
 
     private var minifigGrid: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Re-read when the shared value cache refreshes.
+        let _ = values.revision
+        return VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: L("detail_minifigs_in_set"))
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible())], spacing: 10) {
-                ForEach(minifigs) { fig in
-                    Button { router.open(.minifig(fig.figNum)) } label: {
-                        VStack(spacing: 6) {
-                            RemoteImage([fig.imageUrl], maxPointSize: 120).frame(height: 110)
-                            Text(fig.name).font(.caption.weight(.semibold)).foregroundStyle(Bw.text)
-                                .multilineTextAlignment(.center).lineLimit(2)
-                            Text(fig.figNum).font(.caption2).foregroundStyle(Bw.textMuted)
+            // A `Grid`, not a lazy one: both cards of a row take the taller one's height, so their value
+            // lines line up when one name wraps and the other doesn't.
+            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                ForEach(Array(minifigs.chunked(2).enumerated()), id: \.offset) { _, pair in
+                    GridRow {
+                        ForEach(pair) { fig in
+                            MinifigGridCard(fig: fig, value: values.value(forFig: fig.figNum)) { router.open(.minifig(fig.figNum)) }
                         }
-                        .frame(maxWidth: .infinity)
+                        // A lone card keeps its half width.
+                        if pair.count == 1 { Color.clear.gridCellUnsizedAxes(.vertical) }
                     }
-                    .buttonStyle(.plain)
-                    .bwCard(padding: 10)
                 }
             }
         }
@@ -285,5 +285,56 @@ extension Optional {
     func asyncMap<T>(_ transform: (Wrapped) async -> T) async -> T? {
         guard let self else { return nil }
         return await transform(self)
+    }
+}
+
+/// One fig in a set's "Minifigs in this set" grid — Android's `MinifigGridCard`: number chip, name,
+/// image, then a badge saying whether the fig is **Exclusive** to this set or how many sets it appears
+/// in, and its community value at the bottom. (Internal so it can be rendered on its own.)
+struct MinifigGridCard: View {
+    let fig: Minifig
+    let value: CurrentValue?
+    let onOpen: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Button(action: onOpen) {
+                VStack(spacing: 8) {
+                    Text(fig.figNum).font(.caption2.weight(.bold)).foregroundStyle(Bw.textSecondary).lineLimit(1)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Bw.track, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    Text(fig.name).font(.subheadline.weight(.bold)).foregroundStyle(Bw.text)
+                        .multilineTextAlignment(.center).lineLimit(2)
+                        // Its full two lines: in a Grid row the card is first measured as short as it
+                        // can be, which squeezed a long name onto one truncated line.
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity)
+                    ItemThumb(urls: [fig.imageUrl], size: 96)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            HStack {
+                if fig.setCount <= 1 {
+                    StatusBadge(status: .exclusive)
+                } else {
+                    // A neutral pill in the Exclusive badge's slot and shape.
+                    Text(L(fig.setCount == 1 ? "search_minifig_sets_one" : "search_minifig_sets_other", fig.setCount))
+                        .font(.caption2.weight(.bold)).foregroundStyle(Bw.textSecondary).lineLimit(1)
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .background(Bw.track, in: Capsule())
+                }
+                Spacer(minLength: 0)
+            }
+            // Pushes the value line to the bottom of an equal-height card.
+            Spacer(minLength: 0)
+            ValueLine(label: L("price_value"), value: value)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .bwCard()
+        .contentShape(RoundedRectangle(cornerRadius: Bw.cardRadius, style: .continuous))
+        .onTapGesture(perform: onOpen)
     }
 }

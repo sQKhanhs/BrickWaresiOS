@@ -30,6 +30,9 @@ IOS_ONLY = {
     # Android has these as a <plurals> resource (home_theme_item_count), which this script does not read.
     "home_theme_item_one": ("%d item", "%d bộ"),
     "home_theme_item_other": ("%d items", "%d bộ"),
+    # Likewise Android's <plurals name="search_minifig_sets">.
+    "search_minifig_sets_one": ("In %d set", "Có trong %d bộ"),
+    "search_minifig_sets_other": ("In %d sets", "Có trong %d bộ"),
     # See-Detail sheet: deleting one copy / one sale asks first (iOS only; Android deletes at once there).
     "sd_delete_copy_confirm": ("Delete this copy of \"%1$s\"?", "Xóa bản sao này của \"%1$s\"?"),
     "sd_delete_sale_title": ("Delete sale", "Xóa lần bán"),

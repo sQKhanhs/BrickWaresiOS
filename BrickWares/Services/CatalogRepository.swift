@@ -316,11 +316,12 @@ final class CatalogRepository: Sendable {
         return Self.listable(Self.revealed(rows.compactMap(\.sets))).sorted { $0.releaseYear > $1.releaseYear }
     }
 
-    /// Figs in a set. The grid needs only identity/image, so the theme join is skipped.
+    /// Figs in a set, each with the ids of ALL the sets it appears in (so `setCount` is real): the grid
+    /// badges a fig "Exclusive" when this is its only set, else "In N sets". The theme join is skipped.
     @concurrent
     func fetchMinifigs(forSet setId: Int64) async throws -> [Minifig] {
         let rows: [MinifigWrapperRow] = try await run {
-            try await $0.from("set_minifigs").select("minifigs(fig_num,name,num_parts,image_url)")
+            try await $0.from("set_minifigs").select("minifigs(fig_num,name,num_parts,image_url,set_minifigs(set_id))")
                 .eq("set_id", value: Int(setId)).execute().value
         }
         return rows.compactMap { $0.minifigs?.toMinifig() }.uniqued(by: \.figNum).sorted { $0.figNum < $1.figNum }
