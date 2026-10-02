@@ -24,7 +24,7 @@ struct ToastMessage: Equatable, Identifiable {
 @MainActor
 @Observable
 final class AppRouter {
-    var tab: AppTab = .home
+    private(set) var tab: AppTab = .home
     var homePath: [Route] = []
     var collectionPath: [Route] = []
     var wishlistPath: [Route] = []
@@ -32,25 +32,15 @@ final class AppRouter {
     var settingsPath: [Route] = []
 
     private(set) var toast: ToastMessage?
-    /// Bumped when the Search tab is re-selected, so the Search screen resets to its browse home.
+    /// Bumped whenever the Search tab is entered or re-selected, so the Search screen resets to its
+    /// browse home.
     private(set) var searchResetTick = 0
 
     @ObservationIgnored private var toastTask: Task<Void, Never>?
 
-    /// Tab selection with the native "tap the current tab again → pop to root" behavior. Re-tapping
-    /// Search also resets it to the browse home.
+    /// The tab bar's selection.
     var tabSelection: Binding<AppTab> {
-        Binding(
-            get: { self.tab },
-            set: { new in
-                if new == self.tab {
-                    self.popToRoot(new)
-                    if new == .search { self.searchResetTick += 1 }
-                } else {
-                    self.tab = new
-                }
-            }
-        )
+        Binding(get: { self.tab }, set: { self.go(to: $0) })
     }
 
     /// Push a detail onto the tab the user is currently on.
@@ -64,8 +54,22 @@ final class AppRouter {
         }
     }
 
-    func go(to tab: AppTab) {
-        self.tab = tab
+    /// Selects `tab`, which always opens at its HOME page. A tab does not keep a detail open while the
+    /// user is elsewhere: the tab being left is popped to its root, like Android clearing its detail
+    /// stack on every tab switch (iOS' own default — each tab remembers where it was — read as the app
+    /// "being somewhere else" on return). Tapping the tab you are already on pops it to its root too, the
+    /// native gesture. Entering or re-tapping Search also resets it to the browse home.
+    func go(to new: AppTab) {
+        let old = tab
+        // Off-screen (or about to be): no pop animation to play.
+        var quiet = Transaction()
+        quiet.disablesAnimations = new != old
+        withTransaction(quiet) {
+            popToRoot(old)
+            popToRoot(new)
+        }
+        if new == .search { searchResetTick += 1 }
+        tab = new
     }
 
     func popToRoot(_ tab: AppTab) {

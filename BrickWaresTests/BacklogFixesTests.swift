@@ -76,3 +76,42 @@ struct RetirementBaselineTests {
         }
     }
 }
+
+/// A tab opens at its home page: nothing stays pushed in a tab the user has left.
+@MainActor
+struct TabNavigationTests {
+    @Test func leavingATabPopsItToItsRoot() {
+        let router = AppRouter()
+        router.open(.newSets)
+        router.open(.set("75192-1"))
+        #expect(router.homePath.count == 2)
+
+        router.go(to: .collection)
+        #expect(router.tab == .collection)
+        #expect(router.homePath.isEmpty) // Home will open at its home page next time
+
+        router.open(.set("10297-1"))
+        router.tabSelection.wrappedValue = .home // the tab bar goes through the same path
+        #expect(router.tab == .home && router.collectionPath.isEmpty && router.homePath.isEmpty)
+    }
+
+    @Test func tappingTheCurrentTabPopsItToRoot() {
+        let router = AppRouter()
+        router.go(to: .wishlist)
+        router.open(.minifig("fig-000123"))
+        router.tabSelection.wrappedValue = .wishlist
+        #expect(router.tab == .wishlist && router.wishlistPath.isEmpty)
+    }
+
+    @Test func enteringOrRetappingSearchResetsItToBrowseHome() {
+        let router = AppRouter()
+        let start = router.searchResetTick
+        router.go(to: .search)
+        #expect(router.searchResetTick == start + 1)
+        router.open(.theme(name: "City", subtheme: nil, minifigs: false))
+        router.go(to: .search) // re-tap
+        #expect(router.searchResetTick == start + 2 && router.searchPath.isEmpty)
+        router.go(to: .home)
+        #expect(router.searchResetTick == start + 2) // leaving Search does not reset it again
+    }
+}

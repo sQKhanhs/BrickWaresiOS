@@ -31,7 +31,7 @@ struct BrickWaresApp: App {
         RetirementAlerts.scheduleNext()
         let appRouter = AppRouter()
         _router = State(initialValue: appRouter)
-        notifications = NotificationRouter { appRouter.popToRoot(.wishlist); appRouter.go(to: .wishlist) }
+        notifications = NotificationRouter { appRouter.go(to: .wishlist) }
         UNUserNotificationCenter.current().delegate = notifications
     }
 
