@@ -2959,6 +2959,40 @@
         }
       }
     },
+    "sd_delete_copy_confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this copy of \"%1$@\"?"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xóa bản sao này của \"%1$@\"?"
+          }
+        }
+      }
+    },
+    "sd_delete_sale_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete sale"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xóa lần bán"
+          }
+        }
+      }
+    },
     "sd_edit_copy_cd": {
       "extractionState": "manual",
       "localizations": {
