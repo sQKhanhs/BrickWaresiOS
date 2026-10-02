@@ -235,27 +235,112 @@ private struct TooManyResults: View {
 
 // MARK: - Theme cards
 
-private struct ThemeIcon: View {
+/// Themes found to have no logo this session, so a card that scrolls back in doesn't flash an empty box
+/// again while the loader re-confirms it.
+@MainActor private enum ThemeLogoMemo {
+    static var missing = Set<String>()
+}
+
+/// A theme's logo in its box (card colour, soft border) — Android's `ThemeLogoBox`. A theme without an
+/// uploaded logo shows NO box at all (Android prints a "logo" placeholder there; the owner prefers it
+/// gone on iOS).
+private struct ThemeLogo: View {
     let theme: String
-    var size: CGFloat = 46
+    var width: CGFloat = 140
+    var height: CGFloat = 80
+    var corner: CGFloat = 8
+    var inset: CGFloat = 10
+
+    @State private var missing: Bool
+
+    init(theme: String, width: CGFloat = 140, height: CGFloat = 80, corner: CGFloat = 8, inset: CGFloat = 10) {
+        self.theme = theme
+        self.width = width
+        self.height = height
+        self.corner = corner
+        self.inset = inset
+        _missing = State(initialValue: ThemeLogoMemo.missing.contains(theme))
+    }
 
     var body: some View {
-        RemoteImage([CatalogImages.themeIconUrl(theme)?.absoluteString], maxPointSize: size * 2, hidesOnFailure: true)
-            .frame(width: size * 1.6, height: size)
+        if !missing, let url = CatalogImages.themeIconUrl(theme)?.absoluteString {
+            RemoteImage([url], maxPointSize: width, hidesOnFailure: true) { loaded in
+                guard !loaded else { return }
+                ThemeLogoMemo.missing.insert(theme)
+                missing = true
+            }
+            .padding(inset)
+            .frame(width: width, height: height)
+            .background(Bw.card, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(Bw.borderSoft))
             .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Items in wrapping rows, each row centred — Compose's `FlowRow` with a centred arrangement.
+private struct CenteredFlow: Layout {
+    var spacing: CGFloat = 10
+    var lineSpacing: CGFloat = 2
+
+    private struct Line {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func lines(_ subviews: Subviews, in width: CGFloat) -> [Line] {
+        var lines = [Line()]
+        for (index, subview) in subviews.enumerated() {
+            var size = subview.sizeThatFits(.unspecified)
+            if size.width > width { size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
+            let gap = lines[lines.count - 1].items.isEmpty ? 0 : spacing
+            if !lines[lines.count - 1].items.isEmpty, lines[lines.count - 1].width + gap + size.width > width {
+                lines.append(Line())
+            }
+            let extra = lines[lines.count - 1].items.isEmpty ? 0 : spacing
+            lines[lines.count - 1].items.append((index, size))
+            lines[lines.count - 1].width += extra + size.width
+            lines[lines.count - 1].height = max(lines[lines.count - 1].height, size.height)
+        }
+        return lines.filter { !$0.items.isEmpty }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .greatestFiniteMagnitude
+        let lines = lines(subviews, in: width)
+        let height = lines.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(lines.count - 1, 0))
+        return CGSize(width: proposal.width ?? (lines.map(\.width).max() ?? 0), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in lines(subviews, in: bounds.width) {
+            var x = bounds.minX + (bounds.width - line.width) / 2
+            for item in line.items {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y + line.height / 2), anchor: .leading,
+                    proposal: ProposedViewSize(width: item.size.width, height: item.size.height)
+                )
+                x += item.size.width + spacing
+            }
+            y += line.height + lineSpacing
+        }
     }
 }
 
 private struct FavoriteStar: View {
     let theme: String
     let model: SearchModel
+    /// The grid card's star is a size smaller; its tap area stays thumb-sized.
+    var compact = false
 
     var body: some View {
         let isFav = model.favorites.contains(theme)
         Button { model.toggleFavorite(theme) } label: {
             Image(systemName: isFav ? "star.fill" : "star")
-                .font(.body).foregroundStyle(isFav ? Bw.yellow : Bw.textFaint)
-                .frame(width: 36, height: 36).contentShape(Rectangle())
+                .font(compact ? .footnote : .body).foregroundStyle(isFav ? Bw.yellow : Bw.textFaint)
+                .frame(width: compact ? 32 : 36, height: compact ? 32 : 36).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: isFav)
@@ -263,50 +348,65 @@ private struct FavoriteStar: View {
     }
 }
 
-private struct ThemeCard: View {
+/// A theme in the browse list — Android's `ThemeCard`: the logo big and centred on top, the name and
+/// count under it, then the subthemes as links wrapping over as many centred rows as they need (they
+/// used to be chips in a sideways scroller, most of them off screen). The star sits in the top-right
+/// corner. (Internal so it can be rendered on its own.)
+struct ThemeCard: View {
     let group: ThemeGroup
     let model: SearchModel
     @Environment(AppRouter.self) private var router
 
     private var isMinifigs: Bool { model.mode == .minifigs }
+    private let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+
+    private func open(subtheme: String? = nil) {
+        router.open(.theme(name: group.theme, subtheme: subtheme, minifigs: isMinifigs))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Button { router.open(.theme(name: group.theme, subtheme: nil, minifigs: isMinifigs)) } label: {
-                    HStack(spacing: 12) {
-                        if !isMinifigs { ThemeIcon(theme: group.theme) }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(group.theme).font(.headline).foregroundStyle(Bw.text).multilineTextAlignment(.leading)
-                            Text(verbatim: "(\(Money.count(group.count)))").font(.caption).foregroundStyle(Bw.textMuted)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
+        VStack(spacing: 10) {
+            Button { open() } label: {
+                VStack(spacing: 10) {
+                    ThemeLogo(theme: group.theme)
+                    (Text(group.theme).font(.headline).foregroundStyle(Bw.text)
+                        + Text(verbatim: "  (\(Money.count(group.count)))").font(.footnote).foregroundStyle(Bw.textMuted))
+                        .multilineTextAlignment(.center)
+                        // Clear of the star when there is no logo above to push the name down.
+                        .padding(.horizontal, 26)
                 }
-                .buttonStyle(.plain)
-                FavoriteStar(theme: group.theme, model: model)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
             if !group.subthemes.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(group.subthemes, id: \.self) { sub in
-                            Button { router.open(.theme(name: group.theme, subtheme: sub.name, minifigs: isMinifigs)) } label: {
-                                Text(verbatim: "\(sub.name) (\(sub.count))")
-                                    .font(.caption.weight(.medium)).foregroundStyle(Bw.textSecondary)
-                                    .padding(.horizontal, 10).padding(.vertical, 5)
-                                    .background(Bw.surface, in: Capsule()).overlay(Capsule().strokeBorder(Bw.border))
-                            }
-                            .buttonStyle(.plain)
+                CenteredFlow {
+                    ForEach(group.subthemes, id: \.self) { sub in
+                        Button { open(subtheme: sub.name) } label: {
+                            Text(verbatim: "\(sub.name) (\(sub.count))")
+                                .font(.caption).foregroundStyle(Bw.link)
+                                .padding(.horizontal, 2).padding(.vertical, 4)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
-        .bwCard()
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20).padding(.horizontal, 16)
+        .background(Bw.surface, in: shape)
+        // The rest of the card opens the theme too, as on Android.
+        .contentShape(shape)
+        .onTapGesture { open() }
+        .overlay(alignment: .topTrailing) { FavoriteStar(theme: group.theme, model: model).padding(4) }
     }
 }
 
+/// A theme in the compact two-column grid: a small logo above the name, and the favourite star in the
+/// corner — a toggle, as on Android (it used to be a marker shown only on themes already starred, so
+/// there was no way to star one from the grid).
 private struct ThemeListCard: View {
     let group: ThemeGroup
     let model: SearchModel
@@ -315,7 +415,7 @@ private struct ThemeListCard: View {
     var body: some View {
         Button { router.open(.theme(name: group.theme, subtheme: nil, minifigs: model.mode == .minifigs)) } label: {
             VStack(spacing: 8) {
-                if model.mode == .sets { ThemeIcon(theme: group.theme, size: 38) }
+                ThemeLogo(theme: group.theme, width: 84, height: 48, corner: 6, inset: 6)
                 Text(group.theme).font(.subheadline.weight(.semibold)).foregroundStyle(Bw.text)
                     .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
             }
@@ -323,10 +423,6 @@ private struct ThemeListCard: View {
         }
         .buttonStyle(.plain)
         .bwCard(padding: 10)
-        .overlay(alignment: .topTrailing) {
-            if model.favorites.contains(group.theme) {
-                Image(systemName: "star.fill").font(.caption2).foregroundStyle(Bw.yellow).padding(8)
-            }
-        }
+        .overlay(alignment: .topTrailing) { FavoriteStar(theme: group.theme, model: model, compact: true) }
     }
 }
