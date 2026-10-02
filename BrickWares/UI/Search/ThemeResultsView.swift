@@ -49,6 +49,10 @@ struct ThemeResultsView: View {
     @State private var subtheme: String
     @State private var sort: ThemeDetailSort = .newest
     @State private var figSort: MinifigSort = .name
+    /// Numbered pages, ten cards each; a subtheme or sort change goes back to the first.
+    @State private var page = 1
+
+    private static let topID = "theme-results-top"
 
     init(theme: String, initialSubtheme: String?, minifigMode: Bool) {
         self.theme = theme
@@ -91,23 +95,34 @@ struct ThemeResultsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            switch phase {
-            case .loading:
-                ProgressView().tint(Bw.yellow).frame(maxWidth: .infinity).padding(.top, 80)
-            case .failed:
-                ErrorStateView { Task { await load() } }
-            case .loaded:
-                LazyVStack(spacing: 12) {
-                    controls
-                    if minifigMode {
-                        ForEach(visibleFigs) { MinifigCard(fig: $0) }
-                    } else {
-                        ForEach(visibleSets) { SetResultCard(set: $0) }
+        ScrollViewReader { proxy in
+            ScrollView {
+                switch phase {
+                case .loading:
+                    ProgressView().tint(Bw.yellow).frame(maxWidth: .infinity).padding(.top, 80)
+                case .failed:
+                    ErrorStateView { Task { await load() } }
+                case .loaded:
+                    LazyVStack(spacing: 12) {
+                        controls.id(Self.topID)
+                        let total = minifigMode ? visibleFigs.count : visibleSets.count
+                        if minifigMode {
+                            ForEach(Pagination.items(visibleFigs, page: page)) { MinifigCard(fig: $0) }
+                        } else {
+                            ForEach(Pagination.items(visibleSets, page: page)) { SetResultCard(set: $0) }
+                        }
+                        PaginationBar(
+                            currentPage: Pagination.clamp(page, total: total),
+                            totalPages: Pagination.pageCount(of: total)
+                        ) { page = $0 }
                     }
+                    .padding(.horizontal, Bw.gutter).padding(.bottom, 24)
                 }
-                .padding(.horizontal, Bw.gutter).padding(.bottom, 24)
             }
+            .onChange(of: page) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
+            .onChange(of: subtheme) { _, _ in page = 1 }
+            .onChange(of: sort) { _, _ in page = 1 }
+            .onChange(of: figSort) { _, _ in page = 1 }
         }
         .bwScreen()
         .navigationTitle(theme)

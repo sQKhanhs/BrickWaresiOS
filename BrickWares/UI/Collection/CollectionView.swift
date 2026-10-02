@@ -60,7 +60,13 @@ struct CollectionView: View {
     @State private var filter: ItemFilter = .all
     @State private var sort: ItemSort = .dateAdded
     @State private var salesSort: ItemSort = .dateAdded
+    /// Numbered pages, ten cards each (Android's `PAGE_SIZE`). One page per side; a filter or sort change
+    /// goes back to the first, and a page left past the end by a delete is clamped when it is read.
+    @State private var page = 1
+    @State private var salesPage = 1
     @State private var pendingDelete: PendingDelete?
+
+    private static let topID = "collection-top"
 
     private enum PendingDelete: Identifiable {
         case item(CollectionItem), sale(SoldItem)
@@ -85,23 +91,33 @@ struct CollectionView: View {
     var body: some View {
         let items = items
         let sold = sold
-        List {
-            Group {
-                BannerImage(name: mode == .collection ? "collection_banner" : "sales_banner",
-                            title: mode == .collection ? L("collection_title") : L("sales_title"))
-                if mode == .collection {
-                    collectionSections(items)
-                } else {
-                    salesSections(sold)
+        ScrollViewReader { proxy in
+            List {
+                Group {
+                    BannerImage(name: mode == .collection ? "collection_banner" : "sales_banner",
+                                title: mode == .collection ? L("collection_title") : L("sales_title"))
+                        .id(Self.topID)
+                    if mode == .collection {
+                        collectionSections(items)
+                    } else {
+                        salesSections(sold)
+                    }
                 }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 6, leading: Bw.gutter, bottom: 6, trailing: Bw.gutter))
             }
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 6, leading: Bw.gutter, bottom: 6, trailing: Bw.gutter))
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
+            // A new page starts at the top, as does switching side.
+            .onChange(of: page) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
+            .onChange(of: salesPage) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
+            .onChange(of: mode) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
+            .onChange(of: filter) { _, _ in page = 1 }
+            .onChange(of: sort) { _, _ in page = 1 }
+            .onChange(of: salesSort) { _, _ in salesPage = 1 }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
         .overlay(alignment: .bottomTrailing) {
             // Adding needs the catalog (network) and an account.
             if auth.isSignedIn, connectivity.isOnline {
@@ -162,7 +178,7 @@ struct CollectionView: View {
             if visible.isEmpty {
                 EmptyStateView(message: L("collection_empty"))
             } else {
-                ForEach(visible) { item in
+                ForEach(Pagination.items(visible, page: page)) { item in
                     OwnedItemCard(item: item)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) { pendingDelete = .item(item) } label: {
@@ -170,6 +186,10 @@ struct CollectionView: View {
                             }
                         }
                 }
+                PaginationBar(
+                    currentPage: Pagination.clamp(page, total: visible.count),
+                    totalPages: Pagination.pageCount(of: visible.count)
+                ) { page = $0 }
             }
         }
     }
@@ -202,7 +222,7 @@ struct CollectionView: View {
                 Spacer()
                 OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $salesSort, label: \.label)
             }
-            ForEach(sortedSales(sold)) { sale in
+            ForEach(Pagination.items(sortedSales(sold), page: salesPage)) { sale in
                 SoldItemCard(sale: sale)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) { pendingDelete = .sale(sale) } label: {
@@ -210,6 +230,10 @@ struct CollectionView: View {
                         }
                     }
             }
+            PaginationBar(
+                currentPage: Pagination.clamp(salesPage, total: sold.count),
+                totalPages: Pagination.pageCount(of: sold.count)
+            ) { salesPage = $0 }
         }
     }
 

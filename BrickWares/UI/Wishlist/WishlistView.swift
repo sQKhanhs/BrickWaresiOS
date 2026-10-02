@@ -14,9 +14,13 @@ struct WishlistView: View {
 
     @State private var filter: ItemFilter = .all
     @State private var sort: ItemSort = .dateAdded
+    /// Numbered pages, ten cards each; a filter or sort change goes back to the first.
+    @State private var page = 1
     /// The row awaiting a remove confirmation — a row id, resolved from the live list, so the alert
     /// closes itself if the row goes away meanwhile (a sync, or the item being added to the collection).
     @State private var pendingRemovalId: String?
+
+    private static let topID = "wishlist-top"
 
     private var entries: [WishlistEntry] {
         let _ = (overlay.revision, values.revision, settings.ratesRevision)
@@ -25,51 +29,61 @@ struct WishlistView: View {
 
     var body: some View {
         let entries = entries
-        List {
-            Group {
-                BannerImage(name: "wishlist_banner", title: L("wishlist_title"))
-                StatCardRow(entries: [
-                    StatEntry(icon: "ic_bw_set", value: Money.count(entries.filter { $0.itemType == .set }.count), label: L("stat_sets")),
-                    StatEntry(icon: "ic_bw_minifig", value: Money.count(entries.filter { $0.itemType == .minifig }.count), label: L("stat_minifigs")),
-                    StatEntry(icon: "ic_bw_pieces", value: Money.count(entries.reduce(0) { $0 + $1.pieces }), label: L("stat_pieces")),
-                ])
-                if !auth.isSignedIn {
-                    SignInPromptCard(message: L("wishlist_signin_prompt"))
-                } else {
-                    HStack {
-                        Picker("", selection: $filter) {
-                            ForEach(ItemFilter.allCases) { Text($0.label).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $sort, label: \.label)
-                    }
-                    let visible = sorted(entries.filter { filter.matches($0.itemType) })
-                    if visible.isEmpty {
-                        EmptyStateView(
-                            message: L("wishlist_empty"),
-                            actionTitle: connectivity.isOnline ? L("nav_search") : nil
-                        ) { router.go(to: .search) }
+        ScrollViewReader { proxy in
+            List {
+                Group {
+                    BannerImage(name: "wishlist_banner", title: L("wishlist_title"))
+                        .id(Self.topID)
+                    StatCardRow(entries: [
+                        StatEntry(icon: "ic_bw_set", value: Money.count(entries.filter { $0.itemType == .set }.count), label: L("stat_sets")),
+                        StatEntry(icon: "ic_bw_minifig", value: Money.count(entries.filter { $0.itemType == .minifig }.count), label: L("stat_minifigs")),
+                        StatEntry(icon: "ic_bw_pieces", value: Money.count(entries.reduce(0) { $0 + $1.pieces }), label: L("stat_pieces")),
+                    ])
+                    if !auth.isSignedIn {
+                        SignInPromptCard(message: L("wishlist_signin_prompt"))
                     } else {
-                        ForEach(visible) { entry in
-                            WishlistCard(entry: entry) { pendingRemovalId = entry.rowId }
-                                // Both removal paths (this swipe and the card's heart) confirm first, like
-                                // Collection and Sales (Android f1a1e0c).
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) { pendingRemovalId = entry.rowId } label: {
-                                        Label(L("wishlist_remove_cd"), systemImage: "heart.slash")
+                        HStack {
+                            Picker("", selection: $filter) {
+                                ForEach(ItemFilter.allCases) { Text($0.label).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $sort, label: \.label)
+                        }
+                        let visible = sorted(entries.filter { filter.matches($0.itemType) })
+                        if visible.isEmpty {
+                            EmptyStateView(
+                                message: L("wishlist_empty"),
+                                actionTitle: connectivity.isOnline ? L("nav_search") : nil
+                            ) { router.go(to: .search) }
+                        } else {
+                            ForEach(Pagination.items(visible, page: page)) { entry in
+                                WishlistCard(entry: entry) { pendingRemovalId = entry.rowId }
+                                    // Both removal paths (this swipe and the card's heart) confirm first, like
+                                    // Collection and Sales (Android f1a1e0c).
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button(role: .destructive) { pendingRemovalId = entry.rowId } label: {
+                                            Label(L("wishlist_remove_cd"), systemImage: "heart.slash")
+                                        }
                                     }
-                                }
+                            }
+                            PaginationBar(
+                                currentPage: Pagination.clamp(page, total: visible.count),
+                                totalPages: Pagination.pageCount(of: visible.count)
+                            ) { page = $0 }
                         }
                     }
                 }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 6, leading: Bw.gutter, bottom: 6, trailing: Bw.gutter))
             }
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 6, leading: Bw.gutter, bottom: 6, trailing: Bw.gutter))
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
+            .onChange(of: page) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
+            .onChange(of: filter) { _, _ in page = 1 }
+            .onChange(of: sort) { _, _ in page = 1 }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
         .overlay(alignment: .bottomTrailing) {
             // Sends the user to Search to find sets to wishlist; needs the network and an account.
             if auth.isSignedIn, connectivity.isOnline {

@@ -115,3 +115,34 @@ struct TabNavigationTests {
         #expect(router.searchResetTick == start + 2) // leaving Search does not reset it again
     }
 }
+
+/// Numbered pages for the long lists (Android `PAGE_SIZE` = 10 and `pageWindow`).
+struct PaginationTests {
+    @Test func pageCountAndSlices() {
+        #expect(Pagination.pageCount(of: 0) == 1) // an empty list is still "page 1"
+        #expect(Pagination.pageCount(of: 10) == 1)
+        #expect(Pagination.pageCount(of: 11) == 2)
+        let items = Array(1...23)
+        #expect(Pagination.items(items, page: 1) == Array(1...10))
+        #expect(Pagination.items(items, page: 3) == [21, 22, 23])
+    }
+
+    @Test func aPagePastTheEndIsClamped() {
+        // Deleting the only card of the last page must not leave an empty list showing.
+        let items = Array(1...20)
+        #expect(Pagination.clamp(3, total: items.count) == 2)
+        #expect(Pagination.items(items, page: 3) == Array(11...20))
+        #expect(Pagination.clamp(0, total: items.count) == 1)
+        #expect(Pagination.items([Int](), page: 5).isEmpty)
+    }
+
+    @Test func theWindowShowsEverythingUpToSevenPagesThenEllipses() {
+        #expect(Pagination.window(current: 1, total: 1) == [1])
+        #expect(Pagination.window(current: 4, total: 7) == [1, 2, 3, 4, 5, 6, 7])
+        #expect(Pagination.window(current: 1, total: 20) == [1, 2, nil, 20])
+        #expect(Pagination.window(current: 2, total: 20) == [1, 2, 3, nil, 20])
+        #expect(Pagination.window(current: 10, total: 20) == [1, nil, 9, 10, 11, nil, 20])
+        #expect(Pagination.window(current: 19, total: 20) == [1, nil, 18, 19, 20])
+        #expect(Pagination.window(current: 20, total: 20) == [1, nil, 19, 20])
+    }
+}

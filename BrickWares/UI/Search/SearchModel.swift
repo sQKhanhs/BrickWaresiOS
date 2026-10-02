@@ -51,8 +51,12 @@ final class SearchModel {
         didSet {
             // The compact list shows no counts, so "Amount of sets" isn't offered there.
             if viewMode == .list, themeSort == .count { themeSort = .alphabetical }
+            themePage = 1
         }
     }
+    /// The page of theme cards showing in the one-per-row view (ten a page, like Android; the compact
+    /// grid shows every theme). Back to 1 whenever the order is rebuilt.
+    private(set) var themePage = 1
 
     private(set) var setThemes: [ThemeGroup] = []
     private(set) var minifigThemes: [ThemeGroup] = []
@@ -146,6 +150,13 @@ final class SearchModel {
         case .alphabetical, .favorite: themes.sorted { $0.theme.lowercased() < $1.theme.lowercased() }
         }
         orderedThemeNames = (sorted.filter { favs.contains($0.theme) } + sorted.filter { !favs.contains($0.theme) }).map(\.theme)
+        themePage = 1
+    }
+
+    /// Shows another page of themes, from the top of the list.
+    func selectThemePage(_ page: Int) {
+        themePage = page
+        homeScrollTick += 1
     }
 
     func toggleFavorite(_ theme: String, mode: SearchMode? = nil) {

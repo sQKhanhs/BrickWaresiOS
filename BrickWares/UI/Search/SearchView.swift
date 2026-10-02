@@ -82,7 +82,12 @@ struct SearchView: View {
                 Text(model.themeSort == .favorite ? L("search_no_favorite_themes") : L("search_minifig_empty"))
                     .font(.subheadline).foregroundStyle(Bw.textMuted).multilineTextAlignment(.center).padding(.top, 40)
             } else if model.viewMode == .detail {
-                ForEach(themes) { ThemeCard(group: $0, model: model) }
+                // Ten theme cards a page, as on Android; the compact grid below shows them all.
+                ForEach(Pagination.items(themes, page: model.themePage)) { ThemeCard(group: $0, model: model) }
+                PaginationBar(
+                    currentPage: Pagination.clamp(model.themePage, total: themes.count),
+                    totalPages: Pagination.pageCount(of: themes.count)
+                ) { model.selectThemePage($0) }
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible())], spacing: 10) {
                     ForEach(themes) { ThemeListCard(group: $0, model: model) }
