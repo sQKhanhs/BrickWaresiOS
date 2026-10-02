@@ -435,7 +435,9 @@ extension CatalogSet {
     }
 }
 
-/// Full-screen swipeable gallery. Candidates that fail to load are dropped.
+/// Full-screen swipeable gallery. Candidates that fail to load are dropped. With more than one image, a
+/// strip of thumbnails sits at the bottom to jump between them (Android's `ImageGalleryDialog`); it
+/// replaces the page dots.
 struct ImageGallery: View {
     let urls: [String]
     @Environment(\.dismiss) private var dismiss
@@ -448,18 +450,24 @@ struct ImageGallery: View {
     }
 
     private var visible: [String] { urls.filter { !failed.contains($0) } }
+    /// The image on screen (`selection` is nil until the user swipes or taps a thumbnail).
+    private var current: String? { selection.flatMap { visible.contains($0) ? $0 : nil } ?? visible.first }
 
     var body: some View {
+        let visible = visible
+        let showsStrip = visible.count > 1
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
             TabView(selection: $selection) {
                 ForEach(visible, id: \.self) { url in
                     RemoteImage([url], maxPointSize: 900) { ok in if !ok { failed.insert(url) } }
-                        .padding(12)
+                        .padding(.horizontal, 12)
+                        // Keep the image clear of the close button and the thumbnail strip.
+                        .padding(.top, 56).padding(.bottom, showsStrip ? 96 : 12)
                         .tag(Optional(url))
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: visible.count > 1 ? .always : .never))
+            .tabViewStyle(.page(indexDisplayMode: .never))
 
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.headline).foregroundStyle(.white)
@@ -468,7 +476,30 @@ struct ImageGallery: View {
             .padding(16)
             .accessibilityLabel(L("action_close"))
         }
+        .overlay(alignment: .bottom) {
+            if showsStrip { thumbnails(visible).padding(.bottom, 28) }
+        }
         .onChange(of: visible.isEmpty) { _, empty in if empty { dismiss() } }
+    }
+
+    private func thumbnails(_ visible: [String]) -> some View {
+        HStack(spacing: 10) {
+            ForEach(visible, id: \.self) { url in
+                let selected = url == current
+                let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+                Button { withAnimation(.snappy) { selection = url } } label: {
+                    // The small thumb where one exists (a Rebrickable render), else the image itself.
+                    RemoteImage([CatalogImages.thumbFromRender(url), url], maxPointSize: 54)
+                        .padding(4)
+                        .frame(width: 54, height: 54)
+                        .background(Color.white, in: shape)
+                        .clipShape(shape)
+                        .overlay(shape.strokeBorder(selected ? Bw.yellow : Color.white.opacity(0.33), lineWidth: selected ? 2 : 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
     }
 }
 
