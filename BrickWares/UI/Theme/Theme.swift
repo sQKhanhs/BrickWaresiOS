@@ -115,34 +115,91 @@ extension View {
     }
 }
 
+/// The three sizes of a brand button.
+/// - `regular`: a full-width call to action.
+/// - `compact`: hugs its label (a card's inline actions, Retry, Sign in).
+/// - `column`: an action stacked in a list card's price column — a size smaller, and as wide as the
+///   column, so the buttons there are one line and all the same width (Android: 11 sp buttons filling a
+///   fixed 120 dp column). The column must be `.priceColumn()` for the widths to line up.
+enum BwButtonSize {
+    case regular, compact, column
+
+    fileprivate var font: Font {
+        switch self {
+        case .regular: .body.weight(.semibold)
+        case .compact: .subheadline.weight(.semibold)
+        case .column: .footnote.weight(.semibold)
+        }
+    }
+
+    fileprivate var horizontalPadding: CGFloat {
+        switch self {
+        case .regular: 18
+        case .compact: 12
+        case .column: 10
+        }
+    }
+
+    fileprivate var verticalPadding: CGFloat { self == .regular ? 12 : 7 }
+    fileprivate var fillsWidth: Bool { self != .compact }
+}
+
+/// Icon and title side by side with a fixed gap. Brand buttons set this themselves rather than take the
+/// context's default: inside a `List`, the system label style pushes the title away from the icon, and
+/// on iOS 26 it reports no ideal width at all — so a `.priceColumn()` sized itself without the button
+/// and the title was cut to "Se…".
+private struct BwButtonLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon
+            configuration.title
+        }
+    }
+}
+
+private extension View {
+    /// Label metrics shared by both brand button styles. A small button is always ONE line showing its
+    /// whole title: it neither wraps ("Wish-/listed" used to double the pill's height in a narrow price
+    /// column) nor shrinks or truncates — it takes the width its label needs.
+    func bwButtonLabel(_ size: BwButtonSize) -> some View {
+        labelStyle(BwButtonLabelStyle())
+            .font(size.font)
+            .lineLimit(size == .regular ? nil : 1)
+            .fixedSize(horizontal: size != .regular, vertical: false)
+            .padding(.horizontal, size.horizontalPadding)
+            .padding(.vertical, size.verticalPadding)
+            .frame(maxWidth: size.fillsWidth ? .infinity : nil)
+    }
+}
+
+extension View {
+    /// A list card's trailing price + actions column: exactly as wide as its widest line, so prices are
+    /// never cut and `.column` buttons — which fill it — come out equal in width.
+    func priceColumn() -> some View { fixedSize(horizontal: true, vertical: false) }
+}
+
 /// Primary brand button: yellow fill, dark text.
 struct BwPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
-    var compact = false
+    var size: BwButtonSize = .regular
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(compact ? .subheadline.weight(.semibold) : .body.weight(.semibold))
             .foregroundStyle(Bw.onYellow)
-            .padding(.horizontal, compact ? 12 : 18)
-            .padding(.vertical, compact ? 7 : 12)
-            .frame(maxWidth: compact ? nil : .infinity)
+            .bwButtonLabel(size)
             .background(Bw.yellow.opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45), in: Capsule())
     }
 }
 
 /// Secondary button: outlined capsule.
 struct BwSecondaryButtonStyle: ButtonStyle {
-    var compact = false
+    var size: BwButtonSize = .regular
     var tint: Color = Bw.text
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(compact ? .subheadline.weight(.semibold) : .body.weight(.semibold))
             .foregroundStyle(tint)
-            .padding(.horizontal, compact ? 12 : 18)
-            .padding(.vertical, compact ? 7 : 12)
-            .frame(maxWidth: compact ? nil : .infinity)
+            .bwButtonLabel(size)
             .background(Bw.surface.opacity(configuration.isPressed ? 0.6 : 1), in: Capsule())
             .overlay(Capsule().strokeBorder(Bw.borderStrong))
     }
@@ -150,12 +207,14 @@ struct BwSecondaryButtonStyle: ButtonStyle {
 
 extension ButtonStyle where Self == BwPrimaryButtonStyle {
     static var bwPrimary: BwPrimaryButtonStyle { .init() }
-    static var bwPrimaryCompact: BwPrimaryButtonStyle { .init(compact: true) }
+    static var bwPrimaryCompact: BwPrimaryButtonStyle { .init(size: .compact) }
+    static var bwPrimaryColumn: BwPrimaryButtonStyle { .init(size: .column) }
 }
 
 extension ButtonStyle where Self == BwSecondaryButtonStyle {
     static var bwSecondary: BwSecondaryButtonStyle { .init() }
-    static var bwSecondaryCompact: BwSecondaryButtonStyle { .init(compact: true) }
+    static var bwSecondaryCompact: BwSecondaryButtonStyle { .init(size: .compact) }
+    static var bwSecondaryColumn: BwSecondaryButtonStyle { .init(size: .column) }
 }
 
 /// "Oct 2017" / "2017" / "—" — localized month names.

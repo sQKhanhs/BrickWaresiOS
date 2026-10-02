@@ -69,17 +69,20 @@ struct WishlistView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
+        .overlay(alignment: .bottomTrailing) {
+            // Sends the user to Search to find sets to wishlist; needs the network and an account.
+            if auth.isSignedIn, connectivity.isOnline {
+                FloatingActionButton(
+                    systemImage: "magnifyingglass", label: L("wishlist_search_fab_cd"),
+                    // Pulses while the list is empty, to prompt the first search.
+                    pulsing: !entries.contains { filter.matches($0.itemType) }
+                ) { router.go(to: .search) }
+            }
+        }
         .bwScreen()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if auth.isSignedIn, connectivity.isOnline {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { router.go(to: .search) } label: { Image(systemName: "magnifyingglass") }
-                        .accessibilityLabel(L("wishlist_search_fab_cd"))
-                }
-            }
-        }
         .itemSheets()
         .confirmationDialog(
             L("wishlist_remove_title"),
@@ -165,11 +168,12 @@ private struct WishlistCard: View {
                 Button { sheets.add(CatalogSet(entry), allowSalesMode: false, auth: auth) } label: {
                     Label(L("action_add"), systemImage: "plus")
                 }
-                .buttonStyle(.bwPrimaryCompact)
+                .buttonStyle(.bwPrimaryColumn)
                 // Same look as the shared heart, but in this tab removing asks first.
                 Button(action: onRemove) { Label(L("action_wishlisted"), systemImage: "heart.fill") }
-                    .buttonStyle(BwSecondaryButtonStyle(compact: true, tint: Color(hex: 0xC9506F)))
+                    .buttonStyle(BwSecondaryButtonStyle(size: .column, tint: Color(hex: 0xC9506F)))
             }
+            .priceColumn()
         }
         .bwCard()
     }

@@ -159,7 +159,7 @@ struct WishlistButton: View {
         } label: {
             Label(L(isWishlisted ? "action_wishlisted" : "action_wishlist"), systemImage: isWishlisted ? "heart.fill" : "heart")
         }
-        .buttonStyle(BwSecondaryButtonStyle(compact: true, tint: isWishlisted ? Color(hex: 0xC9506F) : Bw.text))
+        .buttonStyle(BwSecondaryButtonStyle(size: .compact, tint: isWishlisted ? Color(hex: 0xC9506F) : Bw.text))
         .sensoryFeedback(.selection, trigger: isWishlisted)
     }
 }

@@ -101,6 +101,17 @@ struct CollectionView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
+        .overlay(alignment: .bottomTrailing) {
+            // Adding needs the catalog (network) and an account.
+            if auth.isSignedIn, connectivity.isOnline {
+                // Pulses while the collection list is empty, to prompt the first add (not in Sales mode).
+                AddButton(
+                    salesMode: mode == .sales,
+                    pulsing: mode == .collection && !items.contains { filter.matches($0.itemType) }
+                )
+            }
+        }
         .bwScreen()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -113,10 +124,6 @@ struct CollectionView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 190)
                 .accessibilityLabel(L("collection_toggle_sales_cd"))
-            }
-            // Adding needs the catalog (network) and an account.
-            if auth.isSignedIn, connectivity.isOnline {
-                ToolbarItem(placement: .primaryAction) { AddButton(salesMode: mode == .sales) }
             }
         }
         .itemSheets()
@@ -232,14 +239,17 @@ struct CollectionView: View {
     }
 }
 
-/// The "+" in the nav bar: opens the Add sheet in set-number lookup mode.
+/// The floating "+": opens the Add sheet in set-number lookup mode. Its own view because the sheet
+/// coordinator is injected by `.itemSheets()`, below `CollectionView` itself.
 private struct AddButton: View {
     let salesMode: Bool
+    let pulsing: Bool
     @Environment(ItemSheetCoordinator.self) private var sheets
 
     var body: some View {
-        Button { sheets.addRequest = .add(nil, salesMode: salesMode) } label: { Image(systemName: "plus") }
-            .accessibilityLabel(L("collection_add_fab_cd"))
+        FloatingActionButton(systemImage: "plus", label: L("collection_add_fab_cd"), pulsing: pulsing) {
+            sheets.addRequest = .add(nil, salesMode: salesMode)
+        }
     }
 }
 
@@ -328,9 +338,10 @@ struct OwnedItemCard: View {
                 if item.valueShown { ValueLine(label: L("price_value"), value: item.currentValueInfo) }
                 if let growth = item.growthPercent { GrowthLabel(percent: growth, compact: true) }
                 Button { sheets.details(CatalogSet(item)) } label: { Label(L("action_see_detail"), systemImage: "checkmark") }
-                    .buttonStyle(.bwSecondaryCompact)
+                    .buttonStyle(.bwSecondaryColumn)
                     .padding(.top, 2)
             }
+            .priceColumn()
         }
         .bwCard()
     }
@@ -383,9 +394,10 @@ struct SoldItemCard: View {
                 )
                 GrowthLabel(percent: sale.profitPercent, compact: true)
                 Button { sheets.details(CatalogSet(sale), tab: .sales) } label: { Label(L("action_see_detail"), systemImage: "checkmark") }
-                    .buttonStyle(.bwSecondaryCompact)
+                    .buttonStyle(.bwSecondaryColumn)
                     .padding(.top, 2)
             }
+            .priceColumn()
         }
         .bwCard()
     }
