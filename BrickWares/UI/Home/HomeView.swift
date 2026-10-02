@@ -71,6 +71,8 @@ struct HomeView: View {
         .sheet(isPresented: $showShare) {
             ShareCollectionSheet(items: items, summary: summary, themes: themes, memberName: auth.user?.displayName)
         }
+        // Hosts the full-screen image viewer for the New Sets pictures.
+        .itemSheets()
         .task { if newSets.isEmpty { await loadNewSets() } }
         // Opened offline and still on Home: load the card when the connection returns (Android 977b822).
         .onChange(of: Connectivity.shared.isOnline) { _, online in
@@ -199,14 +201,20 @@ private struct ThemesCard: View {
 private struct NewSetsCard: View {
     let sets: [CatalogSet]
     @Environment(AppRouter.self) private var router
+    @Environment(ItemSheetCoordinator.self) private var sheets
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: L("home_new_sets_title"), subtitle: L("home_new_sets_subtitle"))
             ForEach(sets) { set in
-                Button { router.open(.set(set.id)) } label: {
-                    HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    // The picture opens the full-screen viewer, as on every other item card; the rest of
+                    // the row opens the set. (Android's row has no gallery — the whole row opens the set.)
+                    Button { sheets.showGallery(set.galleryUrls) } label: {
                         ItemThumb(urls: set.cardImageUrls, size: 56)
+                    }
+                    .buttonStyle(.plain)
+                    Button { router.open(.set(set.id)) } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(verbatim: "\(set.setNumber) \(set.name)")
                                 .font(.subheadline.weight(.bold)).foregroundStyle(Bw.link)
@@ -218,10 +226,11 @@ private struct NewSetsCard: View {
                                 StatusBadge(status: set.status)
                             }
                         }
-                        Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             Divider()
             Button { router.open(.newSets) } label: {
