@@ -14,7 +14,7 @@ struct WishlistView: View {
 
     @State private var filter: ItemFilter = .all
     @State private var sort: ItemSort = .dateAdded
-    /// The row awaiting a remove confirmation — a row id, resolved from the live list, so the dialog
+    /// The row awaiting a remove confirmation — a row id, resolved from the live list, so the alert
     /// closes itself if the row goes away meanwhile (a sync, or the item being added to the collection).
     @State private var pendingRemovalId: String?
 
@@ -84,10 +84,12 @@ struct WishlistView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .itemSheets()
-        .confirmationDialog(
+        // A centred alert, like Android's dialog (a `confirmationDialog` is anchored to the view it hangs
+        // on and, on iOS 26, popped up at the top of the list).
+        .alert(
             L("wishlist_remove_title"),
             isPresented: Binding(get: { pendingRemoval(in: entries) != nil }, set: { if !$0 { pendingRemovalId = nil } }),
-            titleVisibility: .visible, presenting: pendingRemoval(in: entries)
+            presenting: pendingRemoval(in: entries)
         ) { entry in
             Button(L("action_remove"), role: .destructive) { remove(entry) }
             Button(L("action_cancel"), role: .cancel) {}

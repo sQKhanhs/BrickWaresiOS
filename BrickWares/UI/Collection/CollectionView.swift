@@ -127,9 +127,12 @@ struct CollectionView: View {
             }
         }
         .itemSheets()
-        .confirmationDialog(
+        // A centred alert, like Android's dialog. A `confirmationDialog` is anchored to the view it hangs
+        // on: on iOS 26 it grows out of that view as a popover, which put it at the top of the list,
+        // nowhere near the swiped card.
+        .alert(
             L("collection_delete_title"), isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible, presenting: pendingDelete
+            presenting: pendingDelete
         ) { target in
             Button(L("action_delete"), role: .destructive) { confirmDelete(target) }
             Button(L("action_cancel"), role: .cancel) {}

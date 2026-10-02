@@ -53,7 +53,9 @@ struct HomeView: View {
                 ])
 
                 if !auth.isSignedIn {
-                    SignInPromptCard(message: L("home_signin_prompt")).bwCard(padding: 0)
+                    // Sits straight on the screen background, like Android and like the Collection and
+                    // Wishlist tabs — no card behind it.
+                    SignInPromptCard(message: L("home_signin_prompt"))
                 } else if !themes.isEmpty {
                     ThemesCard(themes: themes, currency: currency)
                 }
@@ -111,8 +113,12 @@ private struct HeroCard: View {
                     .clipped()
             } else {
                 Color(hex: 0xF4F4F2)
+                // The illustration is a photo on its own off-white backdrop (~#F5F5F5, opaque). `.darken`
+                // keeps whichever of image/card is darker per channel, so the backdrop — at or above the
+                // card's tone — vanishes into the card while the brick and its shadow stay. `.multiply`
+                // darkened that backdrop by ~9 levels instead, which drew a grey square around the brick.
                 Image("no_value").resizable().scaledToFit()
-                    .blendMode(.multiply) // melt the illustration's own light backdrop into the card
+                    .blendMode(.darken)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .padding(.horizontal, 70).padding(.bottom, 18)
             }
@@ -246,7 +252,10 @@ struct NewSetsView: View {
             case .failed:
                 ErrorStateView { Task { await load() } }
             case .loaded:
-                LazyVStack(alignment: .leading, spacing: 12, pinnedViews: [.sectionHeaders]) {
+                // Theme headers scroll with their cards (as on Android). Pinned, the outgoing theme's
+                // header hung under the navigation bar while the next one arrived right below it — two
+                // headers at once at every section boundary.
+                LazyVStack(alignment: .leading, spacing: 12) {
                     Text(L("new_sets_count", groups.reduce(0) { $0 + $1.sets.count }))
                         .font(.caption.weight(.bold)).foregroundStyle(Bw.textMuted)
                     ForEach(groups, id: \.theme) { group in
@@ -255,7 +264,8 @@ struct NewSetsView: View {
                         } header: {
                             Text(group.theme).font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 8).background(Bw.bg)
+                                .padding(.top, 8)
+                                .accessibilityAddTraits(.isHeader)
                         }
                     }
                 }
