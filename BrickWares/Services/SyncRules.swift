@@ -145,3 +145,28 @@ enum UserDataLimits {
     /// than clamped — clamping would keep the summed money but drop units, silently losing data.
     static func canMergeQty(existing: Int, added: Int) -> Bool { added >= 1 && existing + added <= maxQuantity }
 }
+
+/// Runs async operations strictly one after another, in the order they were enqueued: each new task
+/// first waits for the one before it. There is no loop and no shared "is something running" flag to
+/// re-check, so a waiter can never spin — see `SyncEngine.sync(uid:)`.
+struct SerialTasks<Value: Sendable> {
+    private var tail: Task<Value, Never>?
+
+    /// Queues `operation` behind everything already queued or running and returns its task.
+    mutating func enqueue(_ operation: @escaping @Sendable () async -> Value) -> Task<Value, Never> {
+        let previous = tail
+        let task = Task {
+            _ = await previous?.value
+            return await operation()
+        }
+        tail = task
+        return task
+    }
+
+    /// Lets go of `task` once it has finished, if nothing was queued behind it.
+    mutating func finished(_ task: Task<Value, Never>) {
+        if tail == task { tail = nil }
+    }
+
+    var isIdle: Bool { tail == nil }
+}

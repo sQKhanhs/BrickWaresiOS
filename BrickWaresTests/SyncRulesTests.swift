@@ -173,3 +173,54 @@ struct WriteLimitsTests {
         #expect(rows.allSatisfy { $0.quantity <= UserDataLimits.maxQuantity })
     }
 }
+
+/// The queue behind `SyncEngine.sync(uid:)`. Its predecessor was a wait-loop that could spin forever when
+/// two sync requests overlapped, which froze the app (the main thread waits on the sync actor).
+struct SerialTasksTests {
+    private actor Log {
+        var events: [String] = []
+        var active = 0
+        var maxActive = 0
+        func begin(_ name: String) { active += 1; maxActive = max(maxActive, active); events.append("start \(name)") }
+        func end(_ name: String) { active -= 1; events.append("end \(name)") }
+    }
+
+    private actor Queue {
+        var tasks = SerialTasks<Int>()
+        func run(_ value: Int, log: Log, for duration: Duration) async -> Int {
+            let task = tasks.enqueue {
+                await log.begin("\(value)")
+                try? await Task.sleep(for: duration)
+                await log.end("\(value)")
+                return value
+            }
+            let result = await task.value
+            tasks.finished(task)
+            return result
+        }
+        var isIdle: Bool { tasks.isIdle }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func overlappingRunsHappenOneAtATimeInOrderAndAllFinish() async {
+        let log = Log(), queue = Queue()
+        // Five requests arriving while the first is still running — the overlap that used to hang.
+        async let a = queue.run(1, log: log, for: .milliseconds(60))
+        try? await Task.sleep(for: .milliseconds(10))
+        async let b = queue.run(2, log: log, for: .milliseconds(5))
+        async let c = queue.run(3, log: log, for: .milliseconds(5))
+        let results = await [a, b, c]
+        #expect(results == [1, 2, 3])
+        #expect(await log.maxActive == 1)
+        let events = await log.events
+        #expect(events.first == "start 1" && events[1] == "end 1")
+        #expect(events.count == 6)
+        #expect(await queue.isIdle)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func aRunAfterAFinishedOneStartsStraightAway() async {
+        let log = Log(), queue = Queue()
+        #expect(await queue.run(1, log: log, for: .zero) == 1)
+        #expect(await queue.run(2, log: log, for: .zero) == 2)
+        #expect(await log.events == ["start 1", "end 1", "start 2", "end 2"])
+    }
+}

@@ -22,7 +22,8 @@ import os
 /// since it was pushed (an edit made mid-push stays dirty for the next run).
 @ModelActor
 actor SyncEngine {
-    private var running: Task<Bool, Never>?
+    /// Sync rounds, queued one behind another.
+    private var rounds = SerialTasks<Bool>()
 
     private static let log = Logger(subsystem: "com.senniapp.brickwares", category: "Sync")
 
@@ -52,12 +53,15 @@ actor SyncEngine {
     /// Full push + pull, serialized: a call made while a sync is running waits for it, then runs
     /// again (so nothing written during the first run is missed). False when the round-trip failed —
     /// local data is already persisted and a later trigger retries.
+    ///
+    /// The queueing must not be a `while let current = running { await current.value }` loop: awaiting a
+    /// task that has ALREADY finished returns without suspending, so a second caller woken before the
+    /// first one had cleared `running` spun forever on this actor. The actor's executor never came free,
+    /// and the main thread — which hops onto it for every sync — froze the app waiting for it.
     func sync(uid: String) async -> Bool {
-        while let current = running { _ = await current.value }
-        let task = Task { await self.performSync(uid: uid) }
-        running = task
-        let ok = await task.value
-        if running == task { running = nil }
+        let round = rounds.enqueue { await self.performSync(uid: uid) }
+        let ok = await round.value
+        rounds.finished(round)
         return ok
     }
 
