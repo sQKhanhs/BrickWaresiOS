@@ -1259,6 +1259,40 @@
         }
       }
     },
+    "home_theme_item_one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld item"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld bộ"
+          }
+        }
+      }
+    },
+    "home_theme_item_other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld items"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld bộ"
+          }
+        }
+      }
+    },
     "item_details_empty": {
       "extractionState": "manual",
       "localizations": {

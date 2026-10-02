@@ -27,6 +27,9 @@ IOS_ONLY = {
     "config_missing_body": ("Add your Supabase key to Secrets.plist (see Secrets.example.plist), then rebuild.", "Thêm khoá Supabase vào Secrets.plist (xem Secrets.example.plist) rồi build lại."),
     "action_rate_now_ios": ("Rate on the App Store", "Đánh giá trên App Store"),
     "rate_prompt_body_ios": ("You’ve built quite a collection! If you have a moment, a rating on the App Store helps other collectors find the app.", "Bạn đã có một bộ sưu tập đáng nể! Nếu có chút thời gian, một đánh giá trên App Store sẽ giúp những người sưu tầm khác tìm thấy ứng dụng."),
+    # Android has these as a <plurals> resource (home_theme_item_count), which this script does not read.
+    "home_theme_item_one": ("%d item", "%d bộ"),
+    "home_theme_item_other": ("%d items", "%d bộ"),
     "action_done": ("Done", "Xong"),
     "action_close": ("Close", "Đóng"),
     "action_edit": ("Edit", "Sửa"),
