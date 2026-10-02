@@ -11,25 +11,34 @@ struct SearchView: View {
         @Bindable var model = model
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
                     Color.clear.frame(height: 0).id(topID)
-                    // Banner then search field — the banner is always the first (scrolling) item and the
-                    // field sits right under it, matching Android; keeping the field unconditional here
-                    // preserves its first-responder as browse/suggestions/results swap below.
+                    // The banner is the first item and scrolls away. Under it, pinned (Android's
+                    // `stickyHeader`): the search field always, plus the browse controls on the browse
+                    // home. Keeping the field unconditional in the header preserves its first-responder
+                    // as browse / suggestions / results swap below.
                     BannerImage(name: "search_banner",
                                 title: model.mode == .sets ? L("search_title") : L("search_title_minifigs"))
-                    SearchField(text: $model.query, prompt: L("search_placeholder")) { model.submit() }
-                    if model.showBrowse {
-                        browse
-                    } else if model.showSuggestions {
-                        suggestions
-                    } else {
-                        results
+                    Section {
+                        if model.showBrowse {
+                            browse
+                        } else if model.showSuggestions {
+                            suggestions
+                        } else {
+                            results
+                        }
+                    } header: {
+                        VStack(spacing: 12) {
+                            SearchField(text: $model.query, prompt: L("search_placeholder")) { model.submit() }
+                            if model.showBrowse { browseControls }
+                        }
+                        .pinnedControls(inList: false)
                     }
                 }
                 .padding(.horizontal, Bw.gutter)
                 .padding(.bottom, 24)
             }
+            .opaqueTopBar()
             .scrollDismissesKeyboard(.immediately)
             // Scroll home only on an explicit reset (mode toggle / tab re-tap) — plain back-navigation
             // leaves the tick unchanged, so the previous scroll position is restored.
@@ -45,9 +54,10 @@ struct SearchView: View {
 
     // MARK: Browse home
 
-    @ViewBuilder private var browse: some View {
+    /// Sets / Minifigs, the theme sort and the view toggle — part of the pinned header.
+    private var browseControls: some View {
         @Bindable var model = model
-        HStack(spacing: 8) {
+        return HStack(spacing: 8) {
             Picker("", selection: $model.mode) {
                 Text(L("stat_sets")).tag(SearchMode.sets)
                 Text(L("stat_minifigs")).tag(SearchMode.minifigs)
@@ -70,7 +80,9 @@ struct SearchView: View {
             }
             .accessibilityLabel(model.viewMode == .detail ? L("search_view_list_cd") : L("search_view_detail_cd"))
         }
+    }
 
+    @ViewBuilder private var browse: some View {
         switch model.browsePhase {
         case .loading:
             ProgressView().tint(Bw.yellow).padding(.top, 50)

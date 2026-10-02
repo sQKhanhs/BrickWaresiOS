@@ -103,22 +103,29 @@ struct ThemeResultsView: View {
                 case .failed:
                     ErrorStateView { Task { await load() } }
                 case .loaded:
-                    LazyVStack(spacing: 12) {
-                        controls.id(Self.topID)
-                        let total = minifigMode ? visibleFigs.count : visibleSets.count
-                        if minifigMode {
-                            ForEach(Pagination.items(visibleFigs, page: page)) { MinifigCard(fig: $0) }
-                        } else {
-                            ForEach(Pagination.items(visibleSets, page: page)) { SetResultCard(set: $0) }
+                    // The count, subtheme filter and sort stay pinned above the cards (on Android they
+                    // sit outside the list altogether).
+                    LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
+                        Section {
+                            let total = minifigMode ? visibleFigs.count : visibleSets.count
+                            if minifigMode {
+                                ForEach(Pagination.items(visibleFigs, page: page)) { MinifigCard(fig: $0) }
+                            } else {
+                                ForEach(Pagination.items(visibleSets, page: page)) { SetResultCard(set: $0) }
+                            }
+                            PaginationBar(
+                                currentPage: Pagination.clamp(page, total: total),
+                                totalPages: Pagination.pageCount(of: total)
+                            ) { page = $0 }
+                        } header: {
+                            controls.pinnedControls(inList: false)
                         }
-                        PaginationBar(
-                            currentPage: Pagination.clamp(page, total: total),
-                            totalPages: Pagination.pageCount(of: total)
-                        ) { page = $0 }
                     }
+                    .id(Self.topID)
                     .padding(.horizontal, Bw.gutter).padding(.bottom, 24)
                 }
             }
+            .opaqueTopBar()
             .onChange(of: page) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
             .onChange(of: subtheme) { _, _ in page = 1 }
             .onChange(of: sort) { _, _ in page = 1 }

@@ -58,7 +58,8 @@ struct PaginationBar: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .alert(L("pagination_go_title"), isPresented: $showJump) {
-                TextField("1–\(totalPages)", text: $jumpText).keyboardType(.numberPad)
+                // A plain String: a literal here would be extracted into the string catalog as a key.
+                TextField(String("1–\(totalPages)"), text: $jumpText).keyboardType(.numberPad)
                 Button(L("action_go")) {
                     if let page = Int(jumpText.filter(\.isNumber)) { onSelect(min(max(page, 1), totalPages)) }
                 }

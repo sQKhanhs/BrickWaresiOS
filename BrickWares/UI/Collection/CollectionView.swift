@@ -94,21 +94,34 @@ struct CollectionView: View {
         ScrollViewReader { proxy in
             List {
                 Group {
-                    BannerImage(name: mode == .collection ? "collection_banner" : "sales_banner",
-                                title: mode == .collection ? L("collection_title") : L("sales_title"))
-                        .id(Self.topID)
+                    // Banner and summary scroll away; the filter / sort row below them is a section
+                    // header, which a plain list keeps pinned at the top (Android's `stickyHeader`).
+                    Section {
+                        BannerImage(name: mode == .collection ? "collection_banner" : "sales_banner",
+                                    title: mode == .collection ? L("collection_title") : L("sales_title"))
+                            .id(Self.topID)
+                        if mode == .collection {
+                            collectionSummary(items)
+                        } else {
+                            salesSummary(sold)
+                        }
+                    }
                     if mode == .collection {
-                        collectionSections(items)
+                        collectionList(items)
                     } else {
-                        salesSections(sold)
+                        salesList(sold)
                     }
                 }
                 .listRowSeparator(.hidden)
+                .listSectionSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 6, leading: Bw.gutter, bottom: 6, trailing: Bw.gutter))
             }
             .listStyle(.plain)
+            // Without this a plain list leaves a tall gap above the pinned header.
+            .listSectionSpacing(0)
             .scrollContentBackground(.hidden)
+            .opaqueTopBar()
             .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
             // A new page starts at the top, as does switching side.
             .onChange(of: page) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
@@ -157,7 +170,7 @@ struct CollectionView: View {
 
     // MARK: Collection mode
 
-    @ViewBuilder private func collectionSections(_ items: [CollectionItem]) -> some View {
+    @ViewBuilder private func collectionSummary(_ items: [CollectionItem]) -> some View {
         let summary = CollectionStats.summary(of: items, display: settings.currency)
         StatCardRow(entries: [
             StatEntry(icon: "ic_bw_set", value: Money.count(summary.setCount), label: L("stat_sets")),
@@ -166,30 +179,39 @@ struct CollectionView: View {
         ])
         if !auth.isSignedIn {
             SignInPromptCard(message: L("collection_signin_prompt"))
-        } else {
-            HStack {
-                Picker("", selection: $filter) {
-                    ForEach(ItemFilter.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $sort, label: \.label)
-            }
-            let visible = sorted(items.filter { filter.matches($0.itemType) })
-            if visible.isEmpty {
-                EmptyStateView(message: L("collection_empty"))
-            } else {
-                ForEach(Pagination.items(visible, page: page)) { item in
-                    OwnedItemCard(item: item)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) { pendingDelete = .item(item) } label: {
-                                Label(L("action_delete"), systemImage: "trash")
+        }
+    }
+
+    /// The cards, under the pinned filter + sort row.
+    @ViewBuilder private func collectionList(_ items: [CollectionItem]) -> some View {
+        if auth.isSignedIn {
+            Section {
+                let visible = sorted(items.filter { filter.matches($0.itemType) })
+                if visible.isEmpty {
+                    EmptyStateView(message: L("collection_empty"))
+                } else {
+                    ForEach(Pagination.items(visible, page: page)) { item in
+                        OwnedItemCard(item: item)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) { pendingDelete = .item(item) } label: {
+                                    Label(L("action_delete"), systemImage: "trash")
+                                }
                             }
-                        }
+                    }
+                    PaginationBar(
+                        currentPage: Pagination.clamp(page, total: visible.count),
+                        totalPages: Pagination.pageCount(of: visible.count)
+                    ) { page = $0 }
                 }
-                PaginationBar(
-                    currentPage: Pagination.clamp(page, total: visible.count),
-                    totalPages: Pagination.pageCount(of: visible.count)
-                ) { page = $0 }
+            } header: {
+                HStack {
+                    Picker("", selection: $filter) {
+                        ForEach(ItemFilter.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $sort, label: \.label)
+                }
+                .pinnedControls(inList: true)
             }
         }
     }
@@ -210,30 +232,39 @@ struct CollectionView: View {
 
     // MARK: Sales mode
 
-    @ViewBuilder private func salesSections(_ sold: [SoldItem]) -> some View {
+    @ViewBuilder private func salesSummary(_ sold: [SoldItem]) -> some View {
         let summary = CollectionStats.salesSummary(of: sold, display: settings.currency)
         SalesSummaryTiles(summary: summary, currency: settings.currency)
         if !auth.isSignedIn {
             SignInPromptCard(message: L("sales_signin_prompt"))
         } else if sold.isEmpty {
             EmptyStateView(message: L("sales_empty"))
-        } else {
-            HStack {
-                Spacer()
-                OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $salesSort, label: \.label)
-            }
-            ForEach(Pagination.items(sortedSales(sold), page: salesPage)) { sale in
-                SoldItemCard(sale: sale)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) { pendingDelete = .sale(sale) } label: {
-                            Label(L("action_delete"), systemImage: "trash")
+        }
+    }
+
+    /// The sold cards, under the pinned sort control (Sales has no All / Set / Minifig filter).
+    @ViewBuilder private func salesList(_ sold: [SoldItem]) -> some View {
+        if auth.isSignedIn, !sold.isEmpty {
+            Section {
+                ForEach(Pagination.items(sortedSales(sold), page: salesPage)) { sale in
+                    SoldItemCard(sale: sale)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { pendingDelete = .sale(sale) } label: {
+                                Label(L("action_delete"), systemImage: "trash")
+                            }
                         }
-                    }
+                }
+                PaginationBar(
+                    currentPage: Pagination.clamp(salesPage, total: sold.count),
+                    totalPages: Pagination.pageCount(of: sold.count)
+                ) { salesPage = $0 }
+            } header: {
+                HStack {
+                    Spacer()
+                    OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $salesSort, label: \.label)
+                }
+                .pinnedControls(inList: true)
             }
-            PaginationBar(
-                currentPage: Pagination.clamp(salesPage, total: sold.count),
-                totalPages: Pagination.pageCount(of: sold.count)
-            ) { salesPage = $0 }
         }
     }
 

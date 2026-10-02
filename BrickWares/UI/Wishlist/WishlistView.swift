@@ -32,53 +32,66 @@ struct WishlistView: View {
         ScrollViewReader { proxy in
             List {
                 Group {
-                    BannerImage(name: "wishlist_banner", title: L("wishlist_title"))
-                        .id(Self.topID)
-                    StatCardRow(entries: [
-                        StatEntry(icon: "ic_bw_set", value: Money.count(entries.filter { $0.itemType == .set }.count), label: L("stat_sets")),
-                        StatEntry(icon: "ic_bw_minifig", value: Money.count(entries.filter { $0.itemType == .minifig }.count), label: L("stat_minifigs")),
-                        StatEntry(icon: "ic_bw_pieces", value: Money.count(entries.reduce(0) { $0 + $1.pieces }), label: L("stat_pieces")),
-                    ])
-                    if !auth.isSignedIn {
-                        SignInPromptCard(message: L("wishlist_signin_prompt"))
-                    } else {
-                        HStack {
-                            Picker("", selection: $filter) {
-                                ForEach(ItemFilter.allCases) { Text($0.label).tag($0) }
-                            }
-                            .pickerStyle(.segmented)
-                            OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $sort, label: \.label)
+                    // Banner and counts scroll away; the filter / sort row below them is a section
+                    // header, which a plain list keeps pinned at the top (Android's `stickyHeader`).
+                    Section {
+                        BannerImage(name: "wishlist_banner", title: L("wishlist_title"))
+                            .id(Self.topID)
+                        StatCardRow(entries: [
+                            StatEntry(icon: "ic_bw_set", value: Money.count(entries.filter { $0.itemType == .set }.count), label: L("stat_sets")),
+                            StatEntry(icon: "ic_bw_minifig", value: Money.count(entries.filter { $0.itemType == .minifig }.count), label: L("stat_minifigs")),
+                            StatEntry(icon: "ic_bw_pieces", value: Money.count(entries.reduce(0) { $0 + $1.pieces }), label: L("stat_pieces")),
+                        ])
+                        if !auth.isSignedIn {
+                            SignInPromptCard(message: L("wishlist_signin_prompt"))
                         }
-                        let visible = sorted(entries.filter { filter.matches($0.itemType) })
-                        if visible.isEmpty {
-                            EmptyStateView(
-                                message: L("wishlist_empty"),
-                                actionTitle: connectivity.isOnline ? L("nav_search") : nil
-                            ) { router.go(to: .search) }
-                        } else {
-                            ForEach(Pagination.items(visible, page: page)) { entry in
-                                WishlistCard(entry: entry) { pendingRemovalId = entry.rowId }
-                                    // Both removal paths (this swipe and the card's heart) confirm first, like
-                                    // Collection and Sales (Android f1a1e0c).
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button(role: .destructive) { pendingRemovalId = entry.rowId } label: {
-                                            Label(L("wishlist_remove_cd"), systemImage: "heart.slash")
+                    }
+                    if auth.isSignedIn {
+                        Section {
+                            let visible = sorted(entries.filter { filter.matches($0.itemType) })
+                            if visible.isEmpty {
+                                EmptyStateView(
+                                    message: L("wishlist_empty"),
+                                    actionTitle: connectivity.isOnline ? L("nav_search") : nil
+                                ) { router.go(to: .search) }
+                            } else {
+                                ForEach(Pagination.items(visible, page: page)) { entry in
+                                    WishlistCard(entry: entry) { pendingRemovalId = entry.rowId }
+                                        // Both removal paths (this swipe and the card's heart) confirm first, like
+                                        // Collection and Sales (Android f1a1e0c).
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                            Button(role: .destructive) { pendingRemovalId = entry.rowId } label: {
+                                                Label(L("wishlist_remove_cd"), systemImage: "heart.slash")
+                                            }
                                         }
-                                    }
+                                }
+                                PaginationBar(
+                                    currentPage: Pagination.clamp(page, total: visible.count),
+                                    totalPages: Pagination.pageCount(of: visible.count)
+                                ) { page = $0 }
                             }
-                            PaginationBar(
-                                currentPage: Pagination.clamp(page, total: visible.count),
-                                totalPages: Pagination.pageCount(of: visible.count)
-                            ) { page = $0 }
+                        } header: {
+                            HStack {
+                                Picker("", selection: $filter) {
+                                    ForEach(ItemFilter.allCases) { Text($0.label).tag($0) }
+                                }
+                                .pickerStyle(.segmented)
+                                OptionMenu(title: L("search_sort_label"), options: ItemSort.allCases, selection: $sort, label: \.label)
+                            }
+                            .pinnedControls(inList: true)
                         }
                     }
                 }
                 .listRowSeparator(.hidden)
+                .listSectionSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 6, leading: Bw.gutter, bottom: 6, trailing: Bw.gutter))
             }
             .listStyle(.plain)
+            // Without this a plain list leaves a tall gap above the pinned header.
+            .listSectionSpacing(0)
             .scrollContentBackground(.hidden)
+            .opaqueTopBar()
             .contentMargins(.bottom, FloatingActionButton.listClearance, for: .scrollContent)
             .onChange(of: page) { _, _ in proxy.scrollTo(Self.topID, anchor: .top) }
             .onChange(of: filter) { _, _ in page = 1 }
